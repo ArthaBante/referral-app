@@ -1,0 +1,10 @@
+{
+  "name": "Shehzaadi — Raigarh Referral Portal",
+  "description": "Mobile-first customer referral and store-credit management system for retail clothing in Raigarh, India.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

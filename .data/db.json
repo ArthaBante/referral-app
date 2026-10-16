@@ -1,0 +1,746 @@
+{
+  "customers": [
+    {
+      "id": "a0979277-110b-44ba-bc5b-1d4bdb2ad383",
+      "name": "Sunita Sharma",
+      "phone": "+919827100001",
+      "personal_token": "token-sunita-sharma-raigarh-789012345678",
+      "marketing_consent": true,
+      "consent_at": "2026-10-05T14:51:33.346Z",
+      "opted_out_at": null,
+      "referred_by_customer_id": null,
+      "created_at": "2026-10-05T14:51:33.346Z"
+    },
+    {
+      "id": "5dd80261-b35e-427c-a4b4-b01f41703e7f",
+      "name": "Priya Verma",
+      "phone": "+919827100002",
+      "personal_token": "token-priya-verma-raigarh-1234567890123",
+      "marketing_consent": true,
+      "consent_at": "2026-10-12T14:51:33.346Z",
+      "opted_out_at": null,
+      "referred_by_customer_id": "a0979277-110b-44ba-bc5b-1d4bdb2ad383",
+      "created_at": "2026-10-12T14:51:33.346Z"
+    },
+    {
+      "id": "95d9d4b3-9801-4aac-8ec0-19d0e6e0ea8d",
+      "name": "Anita Agrawal",
+      "phone": "+919827100003",
+      "personal_token": "token-anita-agrawal-raigarh-345678901234",
+      "marketing_consent": true,
+      "consent_at": "2026-09-15T14:51:33.346Z",
+      "opted_out_at": null,
+      "referred_by_customer_id": null,
+      "created_at": "2026-09-15T14:51:33.346Z"
+    },
+    {
+      "id": "075e0a4f-5aac-4947-9e06-3e48d0cc035f",
+      "name": "Meena Patel",
+      "phone": "+919827100004",
+      "personal_token": "token-meena-patel-raigarh-4567890123456",
+      "marketing_consent": true,
+      "consent_at": "2026-10-10T14:51:33.346Z",
+      "opted_out_at": null,
+      "referred_by_customer_id": null,
+      "created_at": "2026-10-10T14:51:33.346Z"
+    },
+    {
+      "id": "5fbec4d0-3608-4308-bb35-424b11d5cea7",
+      "name": "Pooja Dewangan",
+      "phone": "+919827100005",
+      "personal_token": "token-pooja-dewangan-raigarh-56789012345",
+      "marketing_consent": false,
+      "consent_at": "2026-09-30T14:51:33.346Z",
+      "opted_out_at": "2026-10-13T14:51:33.346Z",
+      "referred_by_customer_id": null,
+      "created_at": "2026-09-30T14:51:33.346Z"
+    }
+  ],
+  "referral_codes": [
+    {
+      "id": "68a2a446-52ac-4b53-a4cc-006f4f880b2e",
+      "code": "SUN789",
+      "owner_customer_id": "a0979277-110b-44ba-bc5b-1d4bdb2ad383",
+      "status": "used",
+      "used_by_customer_id": "5dd80261-b35e-427c-a4b4-b01f41703e7f",
+      "used_sale_id": "8150b11b-ec54-4bc5-906e-a43597626c12",
+      "used_at": "2026-10-12T14:51:33.346Z"
+    },
+    {
+      "id": "ffa09fa1-1e0d-4c85-bff2-b9e7b2476922",
+      "code": "PRI456",
+      "owner_customer_id": "5dd80261-b35e-427c-a4b4-b01f41703e7f",
+      "status": "unused",
+      "used_by_customer_id": null,
+      "used_sale_id": null,
+      "used_at": null
+    },
+    {
+      "id": "17455430-286e-4b79-8611-35b8d3318ebd",
+      "code": "ANI333",
+      "owner_customer_id": "95d9d4b3-9801-4aac-8ec0-19d0e6e0ea8d",
+      "status": "unused",
+      "used_by_customer_id": null,
+      "used_sale_id": null,
+      "used_at": null
+    },
+    {
+      "id": "5692f105-9180-4ef1-96f1-993c5873b1a8",
+      "code": "MEE444",
+      "owner_customer_id": "075e0a4f-5aac-4947-9e06-3e48d0cc035f",
+      "status": "unused",
+      "used_by_customer_id": null,
+      "used_sale_id": null,
+      "used_at": null
+    },
+    {
+      "id": "22f31e8a-7459-4b95-9423-14b990afb0e7",
+      "code": "POO555",
+      "owner_customer_id": "5fbec4d0-3608-4308-bb35-424b11d5cea7",
+      "status": "unused",
+      "used_by_customer_id": null,
+      "used_sale_id": null,
+      "used_at": null
+    }
+  ],
+  "sales": [
+    {
+      "id": "8150b11b-ec54-4bc5-906e-a43597626c12",
+      "customer_id": "5dd80261-b35e-427c-a4b4-b01f41703e7f",
+      "tally_bill_no": "TL-2026-001",
+      "bill_amount": 100000,
+      "discount_amount": 10000,
+      "credit_used": 0,
+      "referral_code_id": "68a2a446-52ac-4b53-a4cc-006f4f880b2e",
+      "staff_id": "f4e371ad-18a2-4499-9189-47343ad63444",
+      "status": "completed",
+      "returned_at": null,
+      "created_at": "2026-10-12T14:51:33.346Z"
+    }
+  ],
+  "credits": [
+    {
+      "id": "f8a6c649-bc87-4b6c-993a-5d4328389b70",
+      "customer_id": "a0979277-110b-44ba-bc5b-1d4bdb2ad383",
+      "source_sale_id": "8150b11b-ec54-4bc5-906e-a43597626c12",
+      "amount": 20000,
+      "remaining": 20000,
+      "status": "pending",
+      "available_at": "2026-10-19T14:51:33.346Z",
+      "expires_at": null,
+      "settings_snapshot": {
+        "a_credit_type": "percent",
+        "a_credit_value": 20,
+        "expiry_days": 90
+      },
+      "reason": null,
+      "created_by_staff_id": "f4e371ad-18a2-4499-9189-47343ad63444",
+      "created_at": "2026-10-12T14:51:33.346Z"
+    },
+    {
+      "id": "b0f001f1-269b-4674-a651-e1f1d9b3f9d7",
+      "customer_id": "95d9d4b3-9801-4aac-8ec0-19d0e6e0ea8d",
+      "source_sale_id": null,
+      "amount": 15000,
+      "remaining": 15000,
+      "status": "active",
+      "available_at": "2026-09-15T14:51:33.346Z",
+      "expires_at": "2026-12-14T14:51:33.346Z",
+      "settings_snapshot": {
+        "expiry_days": 90
+      },
+      "reason": "Loyalty reward bonus",
+      "created_by_staff_id": "31dbee70-a1fc-4fb6-81b8-a3d6089e870b",
+      "created_at": "2026-09-15T14:51:33.346Z"
+    }
+  ],
+  "credit_redemptions": [],
+  "messages": [
+    {
+      "id": "21a1fbbf-2b02-44c0-8925-bfa9c2b84165",
+      "customer_id": "test-cust-a",
+      "kind": "credit_expiring",
+      "channel": "dev",
+      "body": "Shehzaadi: ₹50 of your store credit expires on 20 Oct. Visit us before then!",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:49:42.246Z",
+      "created_at": "2026-10-15T15:49:42.246Z"
+    },
+    {
+      "id": "7ed4e839-8564-468d-b3d7-f305b23981cc",
+      "customer_id": "test-cust-a",
+      "kind": "credit_ready",
+      "channel": "dev",
+      "body": "Shehzaadi: Your ₹200 store credit is ready. Use it by 13 Jan: https://ais-dev-ofvhpzwihbi6h7tbzvlq4p-322133556475.europe-west2.run.app/customer/token-test-cust-a-1234567890123456",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:49:41.742Z",
+      "created_at": "2026-10-15T15:49:41.742Z"
+    },
+    {
+      "id": "d256f597-55aa-44f0-8156-b5f4bf79ccba",
+      "customer_id": "test-cust-a",
+      "kind": "welcome",
+      "channel": "dev",
+      "body": "Shehzaadi: Thanks Test Customer A! Your credit and referral code: /customer/token-test-cust-a-1234567890123456. Give your code to a friend: they get 10% off, you get 20% credit.",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:49:41.224Z",
+      "created_at": "2026-10-15T15:49:41.224Z"
+    },
+    {
+      "id": "160b8df7-41f7-43c6-b4d1-d7949f20fc88",
+      "customer_id": "test-cust-a",
+      "kind": "credit_expiring",
+      "channel": "dev",
+      "body": "Shehzaadi: ₹50 of your store credit expires on 20 Oct. Visit us before then!",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:11:47.596Z",
+      "created_at": "2026-10-15T15:11:47.596Z"
+    },
+    {
+      "id": "094ae104-feee-4ee2-a1c0-8852598f4bed",
+      "customer_id": "test-cust-a",
+      "kind": "credit_ready",
+      "channel": "dev",
+      "body": "Shehzaadi: Your ₹200 store credit is ready. Use it by 13 Jan: https://ais-dev-ofvhpzwihbi6h7tbzvlq4p-322133556475.europe-west2.run.app/customer/token-test-cust-a-1234567890123456",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:11:47.091Z",
+      "created_at": "2026-10-15T15:11:47.091Z"
+    },
+    {
+      "id": "1a33c2ab-3a62-4f5f-852a-1f82707e0857",
+      "customer_id": "test-cust-a",
+      "kind": "welcome",
+      "channel": "dev",
+      "body": "Shehzaadi: Thanks Test Customer A! Your credit and referral code: /customer/token-test-cust-a-1234567890123456. Give your code to a friend: they get 10% off, you get 20% credit.",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:11:46.578Z",
+      "created_at": "2026-10-15T15:11:46.578Z"
+    },
+    {
+      "id": "c6780cc5-cf3b-47ee-a9b8-03bacab3c657",
+      "customer_id": "test-cust-a",
+      "kind": "credit_expiring",
+      "channel": "dev",
+      "body": "Shehzaadi, Raigarh: ₹50 of your store credit expires on 20 Oct. Visit us before then!",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:08:15.326Z",
+      "created_at": "2026-10-15T15:08:15.326Z"
+    },
+    {
+      "id": "bfd2f948-9056-4a5c-a398-6ac8e45ea318",
+      "customer_id": "test-cust-a",
+      "kind": "credit_ready",
+      "channel": "dev",
+      "body": "Shehzaadi, Raigarh: Your ₹200 store credit is ready. Use it by 13 Jan: https://ais-dev-ofvhpzwihbi6h7tbzvlq4p-322133556475.europe-west2.run.app/customer/token-test-cust-a-1234567890123456",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:08:14.820Z",
+      "created_at": "2026-10-15T15:08:14.820Z"
+    },
+    {
+      "id": "46d04ae8-9433-4a35-be8b-231b7a36492c",
+      "customer_id": "test-cust-a",
+      "kind": "welcome",
+      "channel": "dev",
+      "body": "Shehzaadi, Raigarh: Thanks Test Customer A! Your credit and referral code: /customer/token-test-cust-a-1234567890123456. Give your code to a friend: they get 10% off, you get 20% credit.",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T15:08:14.302Z",
+      "created_at": "2026-10-15T15:08:14.302Z"
+    },
+    {
+      "id": "07f79575-a737-4b5e-a0e0-50f29c890f8e",
+      "customer_id": "test-cust-a",
+      "kind": "credit_expiring",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: ₹50 of your store credit expires on 20 Oct. Visit us before then!",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:52:11.972Z",
+      "created_at": "2026-10-15T14:52:11.972Z"
+    },
+    {
+      "id": "77a54a4e-778a-475f-a010-e2687dd84be6",
+      "customer_id": "test-cust-a",
+      "kind": "credit_ready",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: Your ₹200 store credit is ready. Use it by 13 Jan: https://ais-dev-ofvhpzwihbi6h7tbzvlq4p-322133556475.europe-west2.run.app/customer/token-test-cust-a-1234567890123456",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:52:11.466Z",
+      "created_at": "2026-10-15T14:52:11.466Z"
+    },
+    {
+      "id": "42764fdd-1bc0-427a-aaef-ee5a73039842",
+      "customer_id": "test-cust-a",
+      "kind": "welcome",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: Thanks Test Customer A! Your credit and referral code: /customer/token-test-cust-a-1234567890123456. Give your code to a friend: they get 10% off, you get 20% credit.",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:52:10.956Z",
+      "created_at": "2026-10-15T14:52:10.956Z"
+    },
+    {
+      "id": "6b9470ff-4209-4185-b70b-457bf70b2020",
+      "customer_id": "test-cust-a",
+      "kind": "credit_expiring",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: ₹50 of your store credit expires on 20 Oct. Visit us before then!",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:51:57.101Z",
+      "created_at": "2026-10-15T14:51:57.101Z"
+    },
+    {
+      "id": "13d03439-264a-49f6-abd4-68494a695877",
+      "customer_id": "test-cust-a",
+      "kind": "credit_ready",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: Your ₹200 store credit is ready. Use it by 13 Jan: https://ais-dev-ofvhpzwihbi6h7tbzvlq4p-322133556475.europe-west2.run.app/customer/token-test-cust-a-1234567890123456",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:51:56.598Z",
+      "created_at": "2026-10-15T14:51:56.598Z"
+    },
+    {
+      "id": "489fa180-78cf-4787-894e-37530df8eda1",
+      "customer_id": "test-cust-a",
+      "kind": "welcome",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: Thanks Test Customer A! Your credit and referral code: /customer/token-test-cust-a-1234567890123456. Give your code to a friend: they get 10% off, you get 20% credit.",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:51:56.096Z",
+      "created_at": "2026-10-15T14:51:56.096Z"
+    },
+    {
+      "id": "ada09ed8-5ab3-4dc9-8849-6a676d7dbd88",
+      "customer_id": "test-cust-a",
+      "kind": "credit_expiring",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: ₹50 of your store credit expires on 20 Oct. Visit us before then!",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:51:41.725Z",
+      "created_at": "2026-10-15T14:51:41.725Z"
+    },
+    {
+      "id": "44dc8ef7-e9b3-45fc-a213-383ba3dddd2d",
+      "customer_id": "test-cust-a",
+      "kind": "credit_ready",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: Your ₹200 store credit is ready. Use it by 13 Jan: https://ais-dev-ofvhpzwihbi6h7tbzvlq4p-322133556475.europe-west2.run.app/customer/token-test-cust-a-1234567890123456",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:51:41.221Z",
+      "created_at": "2026-10-15T14:51:41.221Z"
+    },
+    {
+      "id": "6e56499b-a287-4248-b37c-67a85ca51d39",
+      "customer_id": "test-cust-a",
+      "kind": "welcome",
+      "channel": "dev",
+      "body": "Aanchal Boutique, Raigarh: Thanks Test Customer A! Your credit and referral code: /customer/token-test-cust-a-1234567890123456. Give your code to a friend: they get 10% off, you get 20% credit.",
+      "status": "sent",
+      "error": null,
+      "sent_at": "2026-10-15T14:51:40.716Z",
+      "created_at": "2026-10-15T14:51:40.716Z"
+    }
+  ],
+  "otp_codes": [],
+  "settings": {
+    "scheme_enabled": true,
+    "b_discount_type": "percent",
+    "b_discount_value": 10,
+    "b_discount_cap": null,
+    "a_credit_type": "percent",
+    "a_credit_value": 20,
+    "min_bill_for_referral": null,
+    "pending_days": 7,
+    "expiry_days": 90,
+    "reminder_days_before": 7,
+    "max_credit_share": 50,
+    "shop_name": "Shehzaadi",
+    "message_language": "English",
+    "updated_at": "2026-10-15T14:55:56.317Z",
+    "updated_by": "Krishna Udasi (Owner)"
+  },
+  "staff": [
+    {
+      "id": "31dbee70-a1fc-4fb6-81b8-a3d6089e870b",
+      "name": "Krishna Udasi (Owner)",
+      "username": "owner",
+      "password_hash": "$2b$10$W2jtvpSB5xSpaeVYGGvPaOmm7ICbp8I.bkCj475AYyWbQKCOdrlMK",
+      "role": "owner",
+      "active": true,
+      "created_at": "2026-10-15T14:51:33.346Z"
+    },
+    {
+      "id": "f4e371ad-18a2-4499-9189-47343ad63444",
+      "name": "Kavita Dewangan (Billing Counter)",
+      "username": "cashier",
+      "password_hash": "$2b$10$1RyS.fmg5Btl.3DLwSuDPOKjk6Sr4mSzAEYby0aJqQz5wXr8c8wK2",
+      "role": "cashier",
+      "active": true,
+      "created_at": "2026-10-15T14:51:33.346Z"
+    }
+  ],
+  "audit_log": [
+    {
+      "id": "08db86a0-8a29-4a58-858e-2d7ccd69b3f2",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 1,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:49:42.249Z"
+    },
+    {
+      "id": "4a779027-386d-424f-ba60-72d7e50102e6",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:49:42.248Z"
+    },
+    {
+      "id": "4142fae0-fa15-411b-80c8-d762d8e4f5a0",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 1
+      },
+      "created_at": "2026-10-15T15:49:42.246Z"
+    },
+    {
+      "id": "22ca59e1-7fe7-4583-9080-a565621fd86c",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 1,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:49:41.742Z"
+    },
+    {
+      "id": "88e247b3-f443-4f28-8619-f848b00d25b4",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 1,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:11:47.600Z"
+    },
+    {
+      "id": "aea140be-7de1-4a19-8136-209a8550a4c5",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:11:47.599Z"
+    },
+    {
+      "id": "3f36ef45-4a00-4da7-8597-10d589756a5b",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 1
+      },
+      "created_at": "2026-10-15T15:11:47.597Z"
+    },
+    {
+      "id": "116207ec-5468-449c-96b3-2e18b7527141",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 1,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:11:47.092Z"
+    },
+    {
+      "id": "13ff2095-9b8b-42a3-bfb2-138a832c640e",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 1,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:08:15.328Z"
+    },
+    {
+      "id": "e751452e-b455-4c31-83cb-c04a99056f8e",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:08:15.327Z"
+    },
+    {
+      "id": "0b0fd268-6ba1-4e32-9adf-b3720697c1ad",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 1
+      },
+      "created_at": "2026-10-15T15:08:15.326Z"
+    },
+    {
+      "id": "b04dfed8-9a59-4a42-9cdd-d6f4ca26e055",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 1,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T15:08:14.821Z"
+    },
+    {
+      "id": "01d0aa2e-9e32-40f6-b114-9bd8d0b1345b",
+      "staff_id": "31dbee70-a1fc-4fb6-81b8-a3d6089e870b",
+      "action": "settings_updated",
+      "details": {
+        "oldSettings": {
+          "scheme_enabled": true,
+          "b_discount_type": "percent",
+          "b_discount_value": 10,
+          "b_discount_cap": null,
+          "a_credit_type": "percent",
+          "a_credit_value": 20,
+          "min_bill_for_referral": null,
+          "pending_days": 7,
+          "expiry_days": 90,
+          "reminder_days_before": 7,
+          "max_credit_share": 50,
+          "shop_name": "Shehzaadi, Raigarh",
+          "message_language": "English",
+          "updated_at": "2026-10-15T14:55:53.658Z",
+          "updated_by": "Sunil Agrawal (Owner)"
+        },
+        "newSettings": {
+          "scheme_enabled": true,
+          "b_discount_type": "percent",
+          "b_discount_value": 10,
+          "b_discount_cap": null,
+          "a_credit_type": "fixed",
+          "a_credit_value": 150,
+          "min_bill_for_referral": null,
+          "pending_days": 7,
+          "expiry_days": 90,
+          "reminder_days_before": 7,
+          "max_credit_share": 50,
+          "shop_name": "Shehzaadi, Raigarh",
+          "message_language": "English",
+          "updated_at": "2026-10-15T14:55:56.317Z",
+          "updated_by": "Sunil Agrawal (Owner)"
+        }
+      },
+      "created_at": "2026-10-15T14:55:56.318Z"
+    },
+    {
+      "id": "438ad182-278b-4c21-9b65-2059c4f6d0e5",
+      "staff_id": "31dbee70-a1fc-4fb6-81b8-a3d6089e870b",
+      "action": "settings_updated",
+      "details": {
+        "oldSettings": {
+          "scheme_enabled": true,
+          "b_discount_type": "percent",
+          "b_discount_value": 10,
+          "b_discount_cap": null,
+          "a_credit_type": "percent",
+          "a_credit_value": 20,
+          "min_bill_for_referral": null,
+          "pending_days": 7,
+          "expiry_days": 90,
+          "reminder_days_before": 7,
+          "max_credit_share": 50,
+          "shop_name": "Aanchal Boutique, Raigarh",
+          "message_language": "English",
+          "updated_at": "2026-10-15T14:51:33.075Z",
+          "updated_by": "system"
+        },
+        "newSettings": {
+          "scheme_enabled": true,
+          "b_discount_type": "percent",
+          "b_discount_value": 10,
+          "b_discount_cap": null,
+          "a_credit_type": "percent",
+          "a_credit_value": 20,
+          "min_bill_for_referral": null,
+          "pending_days": 7,
+          "expiry_days": 90,
+          "reminder_days_before": 7,
+          "max_credit_share": 50,
+          "shop_name": "Shehzaadi, Raigarh",
+          "message_language": "English",
+          "updated_at": "2026-10-15T14:55:53.658Z",
+          "updated_by": "Sunil Agrawal (Owner)"
+        }
+      },
+      "created_at": "2026-10-15T14:55:53.658Z"
+    },
+    {
+      "id": "aa1a7775-0687-4913-9a93-b5934ae7104b",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 1,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:52:11.974Z"
+    },
+    {
+      "id": "9d9a60d0-f0e9-4c42-bad0-ad1635f6d51d",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:52:11.973Z"
+    },
+    {
+      "id": "2f23d586-665a-4304-94d4-082f2becdc84",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 1
+      },
+      "created_at": "2026-10-15T14:52:11.972Z"
+    },
+    {
+      "id": "e84c44fd-76fc-467b-be04-321858a1d83c",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 1,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:52:11.467Z"
+    },
+    {
+      "id": "9af7ad17-657f-45c1-8c3b-6d382c1428e7",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 1,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:51:57.102Z"
+    },
+    {
+      "id": "01d0695c-5065-4208-8bea-ebdbf6c0e6bf",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:51:57.102Z"
+    },
+    {
+      "id": "c54afaa8-3d38-4aca-815d-7daf857a8ba2",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 1
+      },
+      "created_at": "2026-10-15T14:51:57.102Z"
+    },
+    {
+      "id": "0aa91cea-1c1b-41fd-aac6-9d58d3e0b7d7",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 1,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:51:56.598Z"
+    },
+    {
+      "id": "81ab3f71-29fb-4f95-8724-32bd13c6409b",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 1,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:51:41.727Z"
+    },
+    {
+      "id": "e462c6b6-1fdb-4430-acd7-252caace24e2",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:51:41.726Z"
+    },
+    {
+      "id": "789ab3a7-c37e-4e9d-ba2e-a62a36693bf5",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 0,
+        "expired": 0,
+        "remindersSent": 1
+      },
+      "created_at": "2026-10-15T14:51:41.725Z"
+    },
+    {
+      "id": "a8b8287c-a8e1-4d99-97e4-b2a5d385738b",
+      "staff_id": "system",
+      "action": "daily_job_executed",
+      "details": {
+        "activated": 1,
+        "expired": 0,
+        "remindersSent": 0
+      },
+      "created_at": "2026-10-15T14:51:41.222Z"
+    }
+  ]
+}
