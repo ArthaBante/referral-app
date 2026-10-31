@@ -18,7 +18,7 @@ interface CustomerPortalProps {
 }
 
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) => {
-  const [token, setToken] = useState<string>(initialToken || 'token-emma-smith-uk-789012345678');
+  const [token, setToken] = useState<string>(initialToken || '');
   const [data, setData] = useState<CustomerPortalData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,54 +71,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
 
   return (
     <div className="max-w-md mx-auto px-4 py-6 min-h-screen pb-16">
-      <div className="mb-4 p-2.5 bg-neutral-100 rounded-xl border border-neutral-300 text-xs">
-        <div className="flex items-center justify-between mb-1.5 text-neutral-600 font-bold">
-          <span className="flex items-center gap-1">
-            <Smartphone className="w-3.5 h-3.5 text-rose-700" />
-            <span>Customer Mobile Pass Link Simulator</span>
-          </span>
-          <span className="text-[10px] text-neutral-400">No password required</span>
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <button
-            onClick={() => {
-              const t = 'token-emma-smith-uk-789012345678';
-              setToken(t);
-              fetchCustomerData(t);
-            }}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-              token.includes('emma') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
-            }`}
-          >
-            Emma (A)
-          </button>
-          <button
-            onClick={() => {
-              const t = 'token-sophie-taylor-uk-1234567890123';
-              setToken(t);
-              fetchCustomerData(t);
-            }}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-              token.includes('sophie') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
-            }`}
-          >
-            Sophie (B)
-          </button>
-          <button
-            onClick={() => {
-              const t = 'token-oliver-jones-uk-345678901234';
-              setToken(t);
-              fetchCustomerData(t);
-            }}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-              token.includes('oliver') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
-            }`}
-          >
-            Oliver (Active Credit)
-          </button>
-        </div>
-      </div>
-
       {loading && (
         <div className="p-12 text-center text-neutral-400">
           <div className="w-8 h-8 border-3 border-rose-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>

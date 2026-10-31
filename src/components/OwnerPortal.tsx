@@ -103,9 +103,14 @@ import { StaffUser } from '../types/index.ts';
 interface OwnerPortalProps {
   onViewCustomerPortal: (token: string) => void;
   setCurrentUser?: (user: StaffUser | null) => void;
+  onSettingsUpdated?: (newShopName: string) => void;
 }
 
-export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal, setCurrentUser }) => {
+export const OwnerPortal: React.FC<OwnerPortalProps> = ({
+  onViewCustomerPortal,
+  setCurrentUser,
+  onSettingsUpdated,
+}) => {
   const [subTab, setSubTab] = useState<'dashboard' | 'settings' | 'customers' | 'offers' | 'staff' | 'messages' | 'audit'>('dashboard');
 
   const [dashboard, setDashboard] = useState<OwnerDashboardData | null>(null);
@@ -433,6 +438,9 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal, 
     try {
       const res = await ApiClient.updateSettings(settings);
       setSettings(res.settings);
+      if (res.settings.shop_name && onSettingsUpdated) {
+        onSettingsUpdated(res.settings.shop_name);
+      }
       setSettingsSuccess(true);
       setTimeout(() => setSettingsSuccess(false), 3000);
     } catch (err: any) {

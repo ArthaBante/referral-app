@@ -91,76 +91,19 @@ apiRouter.get('/auth/me', (req: Request, res: Response) => {
 // PUBLIC CUSTOMER PORTAL (TOKEN-BASED)
 // -------------------------------------------------------------
 
+apiRouter.get('/shop', (req: Request, res: Response) => {
+  const snapshot = db.getSnapshot();
+  return res.json({ shopName: snapshot.settings.shop_name });
+});
+
 apiRouter.get('/customer/by-token/:token', async (req: Request, res: Response) => {
   try {
     const { token } = req.params;
     const snapshot = db.getSnapshot();
-
-    const customer = snapshot.customers.find((c) => c.personal_token === token);
-    if (!customer) {
-      return res.status(404).json({ error: 'Customer not found or invalid token' });
-    }
-
-    const referralCode = snapshot.referral_codes.find((rc) => rc.owner_customer_id === customer.id);
-
-    const now = new Date();
-    const activeLots = snapshot.credits
-      .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
-      .map((c) => ({
-        id: c.id,
-        amountPounds: BusinessService.penceToPounds(c.amount),
-        remainingPounds: BusinessService.penceToPounds(c.remaining),
-        source: c.source,
-        expiresAt: c.expires_at,
-        daysLeft: c.expires_at
-          ? Math.max(0, Math.ceil((new Date(c.expires_at).getTime() - now.getTime()) / 86400000))
-          : null,
-      }));
-
-    const totalActiveCreditPence = activeLots.reduce((sum, c) => sum + BusinessService.poundsToPence(c.remainingPounds), 0);
-
-    const appUrl = process.env.APP_URL || '';
-    const customerPageUrl = `${appUrl}/customer/${customer.personal_token}`;
-
-    const personalQrDataUri = await QRCode.toDataURL(customerPageUrl, { width: 280, margin: 2 });
-
-    let referralQrDataUri: string | null = null;
-    let whatsappShareUrl: string = '';
-    const friendDiscountPounds = snapshot.settings.friend_discount;
-    const referrerRewardPounds = referralCode ? BusinessService.penceToPounds(referralCode.referrer_return_amount) : snapshot.settings.referrer_reward;
-    const minSpendPounds = snapshot.settings.min_spend;
-
-    if (referralCode) {
-      referralQrDataUri = await QRCode.toDataURL(referralCode.code, { width: 240, margin: 2 });
-      const promoMsg = `Use my code ${referralCode.code} at ${snapshot.settings.shop_name} and get £${friendDiscountPounds} off your first visit (min spend £${minSpendPounds}).`;
-      whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(promoMsg)}`;
-    }
-
-    const firstName = customer.name.split(' ')[0] || customer.name;
-
-    return res.json({
-      shopName: snapshot.settings.shop_name,
-      firstName,
-      fullName: customer.name,
-      personalToken: customer.personal_token,
-      personalQrDataUri,
-      totalActiveCreditPounds: BusinessService.penceToPounds(totalActiveCreditPence),
-      activeLots,
-      referralCode: referralCode
-        ? {
-            code: referralCode.code,
-            status: referralCode.status,
-            qrDataUri: referralQrDataUri,
-            whatsappShareUrl,
-            friendDiscountPounds,
-            referrerRewardPounds,
-          }
-        : null,
-      marketingConsent: customer.marketing_consent && !customer.opted_out_at,
-      optedOut: !!customer.opted_out_at,
-    });
+    const data = await BusinessService.getCustomerPageData(snapshot, token);
+    return res.json(data);
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(404).json({ error: err.message });
   }
 });
 

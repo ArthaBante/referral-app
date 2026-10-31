@@ -5,15 +5,15 @@ import { Navbar } from './components/Navbar.tsx';
 import { CashierPortal } from './components/CashierPortal.tsx';
 import { OwnerPortal } from './components/OwnerPortal.tsx';
 import { CustomerPortal } from './components/CustomerPortal.tsx';
-import { AcceptanceTestRunner } from './components/AcceptanceTestRunner.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'cashier' | 'owner' | 'customer' | 'tests'>('cashier');
+  const [currentTab, setCurrentTab] = useState<'cashier' | 'owner' | 'customer'>('cashier');
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedCustomerToken, setSelectedCustomerToken] = useState<string>('');
-  const [shopName, setShopName] = useState('Demo Salon');
+  const [shopName, setShopName] = useState('Your Business');
+  const [isCustomerOnly, setIsCustomerOnly] = useState(false);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -22,40 +22,42 @@ export default function App() {
       if (token) {
         setSelectedCustomerToken(token);
         setCurrentTab('customer');
+        setIsCustomerOnly(true);
       }
     }
   }, []);
 
   useEffect(() => {
-    const initAuth = async () => {
+    const initApp = async () => {
       const stored = ApiClient.getStoredUser();
       if (stored && ApiClient.getToken()) {
         setCurrentUser(stored);
-      } else {
-        try {
-          const res = await ApiClient.login('cashier', 'change-me');
-          setCurrentUser(res.staff);
-        } catch {
-          // Fallback
-        }
       }
 
       try {
-        const res = await fetch('/api/customer/by-token/token-emma-smith-uk-789012345678');
-        if (res.ok) {
-          const d = await res.json();
-          if (d.shopName) setShopName(d.shopName);
-        }
+        const res = await ApiClient.getShopName();
+        if (res.shopName) setShopName(res.shopName);
       } catch {}
     };
 
-    initAuth();
+    initApp();
   }, []);
 
   const handleViewCustomerPortal = (token: string) => {
     setSelectedCustomerToken(token);
     setCurrentTab('customer');
+    setIsCustomerOnly(true);
   };
+
+  if (isCustomerOnly || currentTab === 'customer') {
+    return (
+      <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-rose-200 selection:text-rose-950">
+        <main className="flex-1">
+          <CustomerPortal initialToken={selectedCustomerToken} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-rose-200 selection:text-rose-950">
@@ -78,14 +80,12 @@ export default function App() {
         )}
 
         {currentTab === 'owner' && (
-          <OwnerPortal onViewCustomerPortal={handleViewCustomerPortal} setCurrentUser={setCurrentUser} />
+          <OwnerPortal
+            onViewCustomerPortal={handleViewCustomerPortal}
+            setCurrentUser={setCurrentUser}
+            onSettingsUpdated={(newShopName: string) => setShopName(newShopName)}
+          />
         )}
-
-        {currentTab === 'customer' && (
-          <CustomerPortal initialToken={selectedCustomerToken} />
-        )}
-
-        {currentTab === 'tests' && <AcceptanceTestRunner />}
       </main>
 
       <AuthModal

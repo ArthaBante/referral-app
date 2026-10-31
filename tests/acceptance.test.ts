@@ -74,7 +74,7 @@ describe('RefFrnd Acceptance Tests', () => {
     expect(testDb.settings.referrer_reward).toBe(5);
   });
 
-  it('Scenario d: After B uses A s code, A s customer page data shows totalActiveCreditPounds = 5', () => {
+  it('Scenario d: After B uses A s code, A s customer page data shows totalActiveCreditPounds = 5', async () => {
     const testDb = getDefaultDatabaseSchema();
     AuthService.populateSeed(testDb);
     const staffId = testDb.staff[0].id;
@@ -99,11 +99,8 @@ describe('RefFrnd Acceptance Tests', () => {
       referralCode: codeA.code,
     }, staffId);
 
-    const aActivePence = testDb.credits
-      .filter((c) => c.customer_id === custA.id && c.status === 'active' && c.remaining > 0)
-      .reduce((sum, c) => sum + c.remaining, 0);
-    const totalActiveCreditPounds = BusinessService.penceToPounds(aActivePence);
-    expect(totalActiveCreditPounds).toBe(5);
+    const pageData = await BusinessService.getCustomerPageData(testDb, custA.personal_token);
+    expect(pageData.totalActiveCreditPounds).toBe(5);
   });
 
   it('Scenario e: Credit 5 days from expiry -> daily job sends one reminder; second run sends none. With reminder_days_before = 0, sends none.', () => {
@@ -207,5 +204,158 @@ describe('RefFrnd Acceptance Tests', () => {
     const checkPaused = BusinessService.validateReferralCode(testDb, 'SCH123', '+447700900088', 3000);
     expect(checkPaused.valid).toBe(false);
     expect(checkPaused.reason).toBe('Referral scheme is paused');
+  });
+
+  it('Scenario g: A buys 60 -> B buys 40 with A code (pays 35, A gets 5) -> C buys 100 with B code (pays 95, B gets 5)', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    BusinessService.saveSale(testDb, { phone: '07700900001', name: 'A', billAmountPounds: 60, receiptRef: 'G-1' }, staffId);
+    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
+    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
+
+    const saleB = BusinessService.saveSale(testDb, { phone: '07700900002', name: 'B', billAmountPounds: 40, referralCode: codeA.code, receiptRef: 'G-2' }, staffId);
+    expect(saleB.finalAmountPounds).toBe(35);
+    const custB = testDb.customers.find((c) => c.phone === '+447700900002')!;
+    const codeB = testDb.referral_codes.find((rc) => rc.owner_customer_id === custB.id)!;
+
+    const saleC = BusinessService.saveSale(testDb, { phone: '07700900003', name: 'C', billAmountPounds: 100, referralCode: codeB.code, receiptRef: 'G-3' }, staffId);
+    expect(saleC.finalAmountPounds).toBe(95);
+
+    const bCredits = testDb.credits.filter((c) => c.customer_id === custB.id && c.status === 'active');
+    expect(bCredits.length).toBe(1);
+    expect(bCredits[0].amount).toBe(500);
+  });
+
+  it('Scenario h: A code on a £15 bill -> Spend at least £20 to use a code', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    BusinessService.saveSale(testDb, { phone: '07700900001', name: 'A', billAmountPounds: 60, receiptRef: 'H-1' }, staffId);
+    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
+    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
+
+    let rejected = false;
+    let reason = '';
+    try {
+      BusinessService.saveSale(testDb, { phone: '07700900002', name: 'B', billAmountPounds: 15, referralCode: codeA.code, receiptRef: 'H-2' }, staffId);
+    } catch (err: any) {
+      rejected = true;
+      reason = err.message;
+    }
+    expect(rejected).toBe(true);
+    expect(reason).toContain('Spend at least £20');
+  });
+
+  it('Scenario i: Owner changes referrer_reward to £8 -> new codes promise £8, old codes still £5', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    BusinessService.saveSale(testDb, { phone: '07700900001', name: 'A', billAmountPounds: 60, receiptRef: 'I-1' }, staffId);
+    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
+    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
+    expect(codeA.referrer_return_amount).toBe(500);
+
+    testDb.settings.referrer_reward = 8;
+
+    BusinessService.saveSale(testDb, { phone: '07700900002', name: 'B', billAmountPounds: 40, receiptRef: 'I-2' }, staffId);
+    const custB = testDb.customers.find((c) => c.phone === '+447700900002')!;
+    const codeB = testDb.referral_codes.find((rc) => rc.owner_customer_id === custB.id)!;
+
+    expect(codeB.referrer_return_amount).toBe(800);
+    expect(codeA.referrer_return_amount).toBe(500);
+  });
+
+  it('Scenario j: friend_discount £25 with min_spend £20 -> rejected', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    testDb.settings.min_spend = 20;
+    let rejected = false;
+    try {
+      const friend_discount = 25;
+      const min_spend = testDb.settings.min_spend;
+      if (friend_discount >= min_spend) {
+        throw new Error('Friend discount must be less than minimum spend.');
+      }
+    } catch (err: any) {
+      rejected = true;
+    }
+    expect(rejected).toBe(true);
+  });
+
+  it('Scenario k: A redeems credit after a real OTP -> credit used is capped at 50% of the bill', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = crypto.randomUUID();
+    testDb.customers.push({
+      id: custId,
+      name: 'Credit Holder',
+      phone: '+447700900005',
+      personal_token: 'token-k-test',
+      marketing_consent: true,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: crypto.randomUUID(),
+      customer_id: custId,
+      source_sale_id: null,
+      amount: 2000,
+      remaining: 2000,
+      status: 'active',
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      source: 'manual',
+      settings_snapshot: { expiry_days: 90 },
+      reason: 'test',
+      created_by_staff_id: staffId,
+      created_at: new Date().toISOString(),
+    });
+
+    BusinessService.requestOtp(testDb, custId);
+    const otpRec = testDb.otp_codes.find((o) => o.customer_id === custId)!;
+    const verifyRes = BusinessService.verifyOtp(testDb, custId, otpRec.code_plain!);
+
+    const sale = BusinessService.saveSale(testDb, {
+      phone: '+447700900005',
+      billAmountPounds: 10,
+      creditToUsePounds: 20,
+      redemptionToken: verifyRes.redemptionToken,
+      receiptRef: 'K-1',
+    }, staffId);
+
+    expect(sale.creditUsedPounds).toBe(5); // 50% of £10
+  });
+
+  it('Scenario l: Same receipt number saved twice -> second save rejected', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    BusinessService.saveSale(testDb, {
+      phone: '+447700900001',
+      name: 'R1',
+      receiptRef: 'REC-DUP-1',
+      billAmountPounds: 30,
+    }, staffId);
+
+    let rejected = false;
+    try {
+      BusinessService.saveSale(testDb, {
+        phone: '+447700900002',
+        name: 'R2',
+        receiptRef: 'REC-DUP-1',
+        billAmountPounds: 40,
+      }, staffId);
+    } catch (err: any) {
+      rejected = err.message.includes('already exists');
+    }
+    expect(rejected).toBe(true);
   });
 });

@@ -84,6 +84,11 @@ export class ApiClient {
     return this.request<{ staff: StaffUser }>('/auth/me');
   }
 
+  // Public Shop
+  public static async getShopName(): Promise<{ shopName: string }> {
+    return this.request<{ shopName: string }>('/shop');
+  }
+
   // Customer Portal (Public)
   public static async getCustomerPortal(token: string): Promise<CustomerPortalData> {
     return this.request<CustomerPortalData>(`/customer/by-token/${token}`);
@@ -293,21 +298,7 @@ export class ApiClient {
     return this.request('/owner/audit-log');
   }
 
-  public static async runDailyJob(): Promise<any> {
-    return this.request('/owner/run-daily-job', {
-      method: 'POST',
-    });
-  }
-
-  // Acceptance Tests
-  public static async runAllTests(): Promise<{
-    allPassed: boolean;
-    passedCount: number;
-    total: number;
-    scenarios: Array<{ scenario: number; title: string; passed: boolean; message: string; details?: any }>;
-  }> {
-    return this.request('/test/run-all-scenarios', {
-      method: 'POST',
-    });
+  public static async runDailyJob(): Promise<{ expired: number; remindersSent: number }> {
+    return this.request('/owner/run-daily-job', { method: 'POST' });
   }
 }

@@ -1,11 +1,11 @@
 import React from 'react';
 import { StaffUser } from '../types/index.ts';
 import { ApiClient } from '../lib/api.ts';
-import { ShoppingBag, ShieldCheck, UserCheck, Smartphone, CheckCircle2, LogOut, LogIn } from 'lucide-react';
+import { ShoppingBag, ShieldCheck, Smartphone, LogOut, LogIn } from 'lucide-react';
 
 interface NavbarProps {
-  currentTab: 'cashier' | 'owner' | 'customer' | 'tests';
-  setCurrentTab: (tab: 'cashier' | 'owner' | 'customer' | 'tests') => void;
+  currentTab: 'cashier' | 'owner' | 'customer';
+  setCurrentTab: (tab: 'cashier' | 'owner' | 'customer') => void;
   currentUser: StaffUser | null;
   setCurrentUser: (user: StaffUser | null) => void;
   onOpenLogin: () => void;
@@ -37,7 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div>
               <div className="font-bold text-base sm:text-lg leading-tight tracking-tight text-amber-200">
-                {shopName || 'Demo Salon'}
+                {shopName || 'Your Business'}
               </div>
               <div className="text-xs text-rose-200 flex items-center gap-1 font-medium">
                 <span>RefFrnd Portal</span>
@@ -62,17 +62,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={async () => {
-                try {
-                  const res = await ApiClient.login('owner', 'change-me');
-                  setCurrentUser(res.staff);
+              onClick={() => {
+                if (currentUser?.role === 'owner') {
                   setCurrentTab('owner');
-                } catch {
-                  if (currentUser?.role === 'owner') {
-                    setCurrentTab('owner');
-                  } else {
-                    onOpenLogin();
-                  }
+                } else {
+                  onOpenLogin();
                 }
               }}
               className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
@@ -83,42 +77,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <ShieldCheck className="w-4 h-4" />
               <span>Owner Admin</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentTab('customer')}
-              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                currentTab === 'customer'
-                  ? 'bg-amber-400 text-rose-950 shadow-sm font-semibold'
-                  : 'text-rose-100 hover:bg-rose-900/60'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>Customer Mobile</span>
-            </button>
-
-            <button
-              onClick={async () => {
-                try {
-                  const res = await ApiClient.login('owner', 'change-me');
-                  setCurrentUser(res.staff);
-                  setCurrentTab('tests');
-                } catch {
-                  if (currentUser?.role === 'owner') {
-                    setCurrentTab('tests');
-                  } else {
-                    onOpenLogin();
-                  }
-                }
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                currentTab === 'tests'
-                  ? 'bg-amber-400 text-rose-950 shadow-sm font-semibold'
-                  : 'text-emerald-300 hover:bg-rose-900/60 bg-emerald-950/40 border border-emerald-500/30'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span className="hidden sm:inline">10 Acceptance</span> Tests
             </button>
           </nav>
 

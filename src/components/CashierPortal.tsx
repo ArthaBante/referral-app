@@ -55,7 +55,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [redemptionToken, setRedemptionToken] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [otpInput, setOtpInput] = useState('');
-  const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
@@ -166,11 +165,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     if (!customerId) return;
     setOtpError(null);
     try {
-      const res = await ApiClient.requestOtp(customerId);
+      await ApiClient.requestOtp(customerId);
       setOtpSent(true);
-      if (res.devOtp) {
-        setDevOtpHint(res.devOtp);
-      }
     } catch (err: any) {
       setOtpError(err.message);
     }
@@ -269,7 +265,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     setRedemptionToken(null);
     setOtpSent(false);
     setOtpInput('');
-    setDevOtpHint(null);
     setBillAmountInput('');
     setReceiptRef('');
     setCalcCreditUsedPounds(0);
@@ -456,44 +451,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                 className="px-5 py-3 rounded-xl bg-rose-900 hover:bg-rose-800 text-white font-bold text-sm shadow-sm transition disabled:opacity-40"
               >
                 Lookup
-              </button>
-            </div>
-
-            {/* Quick Sample Chips */}
-            <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] text-neutral-400 font-semibold flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-500" />
-                Quick Samples:
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setPhoneInput('07700 900101');
-                  handlePhoneLookup('07700 900101');
-                }}
-                className="text-[11px] bg-rose-50 hover:bg-rose-100 text-rose-900 px-2 py-0.5 rounded-lg border border-rose-200 font-medium"
-              >
-                Emma (07700 900101)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPhoneInput('07700 900103');
-                  handlePhoneLookup('07700 900103');
-                }}
-                className="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-200 font-medium"
-              >
-                Oliver (07700 900103 - £10 credit)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPhoneInput('07700 900999');
-                  handlePhoneLookup('07700 900999');
-                }}
-                className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-700 px-2 py-0.5 rounded-lg border border-neutral-300 font-medium"
-              >
-                + Fresh New Customer
               </button>
             </div>
 
@@ -684,15 +641,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                               <div className="p-2.5 bg-white rounded-xl border border-neutral-300 space-y-2">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-bold text-neutral-600">Enter 6-digit OTP:</span>
-                                  {devOtpHint && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setOtpInput(devOtpHint)}
-                                      className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono font-bold"
-                                    >
-                                      Dev Auto-fill: {devOtpHint}
-                                    </button>
-                                  )}
                                 </div>
                                 <div className="flex gap-2">
                                   <input

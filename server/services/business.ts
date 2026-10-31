@@ -1,6 +1,7 @@
 import { DatabaseSchema, Customer, ReferralCode, Sale, Credit, Settings, RedemptionToken } from '../db.ts';
 import { messagingService } from './messaging.ts';
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 
 export interface SaveSaleInput {
   phone: string;
@@ -154,7 +155,7 @@ export class BusinessService {
   public static requestOtp(
     database: DatabaseSchema,
     customerId: string
-  ): { success: boolean; devOtp?: string; expiresAt: string } {
+  ): { success: boolean; expiresAt: string } {
     const customer = database.customers.find((c) => c.id === customerId);
     if (!customer) {
       throw new Error('Customer not found');
@@ -190,11 +191,75 @@ export class BusinessService {
       data: { otp: otpDigits },
     });
 
-    const isDev = !process.env.MESSAGING_PROVIDER || process.env.MESSAGING_PROVIDER === 'dev';
     return {
       success: true,
-      devOtp: isDev ? otpDigits : undefined,
       expiresAt,
+    };
+  }
+
+  public static async getCustomerPageData(database: DatabaseSchema, token: string) {
+    const customer = database.customers.find((c) => c.personal_token === token);
+    if (!customer) {
+      throw new Error('Customer not found or invalid token');
+    }
+
+    const referralCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer.id);
+
+    const now = new Date();
+    const activeLots = database.credits
+      .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
+      .map((c) => ({
+        id: c.id,
+        amountPounds: this.penceToPounds(c.amount),
+        remainingPounds: this.penceToPounds(c.remaining),
+        source: c.source,
+        expiresAt: c.expires_at,
+        daysLeft: c.expires_at
+          ? Math.max(0, Math.ceil((new Date(c.expires_at).getTime() - now.getTime()) / 86400000))
+          : null,
+      }));
+
+    const totalActiveCreditPence = activeLots.reduce((sum, c) => sum + this.poundsToPence(c.remainingPounds), 0);
+
+    const appUrl = process.env.APP_URL || '';
+    const customerPageUrl = `${appUrl}/customer/${customer.personal_token}`;
+
+    const personalQrDataUri = await QRCode.toDataURL(customerPageUrl, { width: 280, margin: 2 });
+
+    let referralQrDataUri: string | null = null;
+    let whatsappShareUrl: string = '';
+    const friendDiscountPounds = database.settings.friend_discount;
+    const referrerRewardPounds = referralCode ? this.penceToPounds(referralCode.referrer_return_amount) : database.settings.referrer_reward;
+    const minSpendPounds = database.settings.min_spend;
+
+    if (referralCode) {
+      referralQrDataUri = await QRCode.toDataURL(referralCode.code, { width: 240, margin: 2 });
+      const promoMsg = `Use my code ${referralCode.code} at ${database.settings.shop_name} and get £${friendDiscountPounds} off your first visit (min spend £${minSpendPounds}).`;
+      whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(promoMsg)}`;
+    }
+
+    const firstName = customer.name.split(' ')[0] || customer.name;
+
+    return {
+      shopName: database.settings.shop_name,
+      firstName,
+      fullName: customer.name,
+      personalToken: customer.personal_token,
+      personalQrDataUri,
+      totalActiveCreditPounds: this.penceToPounds(totalActiveCreditPence),
+      activeLots,
+      referralCode: referralCode
+        ? {
+            code: referralCode.code,
+            status: referralCode.status,
+            qrDataUri: referralQrDataUri,
+            whatsappShareUrl,
+            friendDiscountPounds,
+            referrerRewardPounds,
+          }
+        : null,
+      marketingConsent: customer.marketing_consent && !customer.opted_out_at,
+      optedOut: !!customer.opted_out_at,
     };
   }
 
