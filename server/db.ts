@@ -1,11 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 
 export interface Customer {
   id: string;
   name: string;
-  phone: string; // +91XXXXXXXXXX
+  phone: string; // +447XXXXXXXXX
   personal_token: string;
   marketing_consent: boolean;
   consent_at: string;
@@ -22,19 +21,19 @@ export interface ReferralCode {
   used_by_customer_id: string | null;
   used_sale_id: string | null;
   used_at: string | null;
+  issued_sale_id?: string;
+  referrer_return_amount: number; // pence
+  return_settings_snapshot?: Record<string, any>;
 }
 
 export interface Sale {
   id: string;
   customer_id: string;
-  tally_bill_no: string;
-  bill_amount: number; // paise
-  discount_amount: number; // paise
-  credit_used: number; // paise
+  receipt_ref: string | null;
+  bill_amount: number; // pence
+  credit_used: number; // pence
   referral_code_id: string | null;
   staff_id: string;
-  status: 'completed' | 'returned';
-  returned_at: string | null;
   created_at: string;
 }
 
@@ -42,11 +41,11 @@ export interface Credit {
   id: string;
   customer_id: string;
   source_sale_id: string | null;
-  amount: number; // paise
-  remaining: number; // paise
-  status: 'pending' | 'active' | 'expired' | 'cancelled';
-  available_at: string;
+  amount: number; // pence
+  remaining: number; // pence
+  status: 'active' | 'expired' | 'cancelled';
   expires_at: string | null;
+  source: 'referral_return' | 'friend_credit' | 'manual';
   settings_snapshot: Record<string, any>;
   reason: string | null;
   created_by_staff_id: string | null;
@@ -58,17 +57,17 @@ export interface CreditRedemption {
   id: string;
   credit_id: string;
   sale_id: string;
-  amount: number; // paise
+  amount: number; // pence
   created_at: string;
 }
 
 export interface MessageRecord {
   id: string;
   customer_id: string;
-  kind: 'welcome' | 'credit_pending' | 'credit_ready' | 'credit_expiring' | 'credit_used' | 'otp' | 'offer';
+  kind: 'welcome' | 'referral_return' | 'credit_expiring' | 'credit_used' | 'otp' | 'offer';
   channel: 'dev' | 'sms' | 'whatsapp';
   body: string;
-  status: 'queued' | 'sent' | 'failed';
+  status: 'sent' | 'failed';
   error: string | null;
   sent_at: string | null;
   created_at: string;
@@ -85,20 +84,27 @@ export interface OtpCode {
   created_at: string;
 }
 
+export interface RedemptionToken {
+  id: string;
+  customer_id: string;
+  token: string;
+  expires_at: string;
+  used: boolean;
+  created_at: string;
+}
+
 export interface Settings {
   scheme_enabled: boolean;
-  b_discount_type: 'percent' | 'fixed';
-  b_discount_value: number; // % or ₹ (in rupees)
-  b_discount_cap: number | null; // ₹ cap (in rupees)
-  a_credit_type: 'percent' | 'fixed';
-  a_credit_value: number; // % or ₹ (in rupees)
-  min_bill_for_referral: number | null; // ₹ (in rupees)
-  pending_days: number;
+  a_return_type: 'percent' | 'fixed';
+  a_return_value: number; // % or £
+  b_credit_type: 'percent' | 'fixed';
+  b_credit_value: number; // % or £
+  b_credit_cap: number | null; // £ cap
+  min_bill_for_referral: number | null; // £
   expiry_days: number;
   reminder_days_before: number;
-  max_credit_share: number; // % (e.g. 50)
+  max_credit_share: number; // % (default 50)
   shop_name: string;
-  message_language: 'English' | 'Hindi' | 'both';
   updated_at: string;
   updated_by: string;
 }
@@ -121,6 +127,24 @@ export interface AuditLog {
   created_at: string;
 }
 
+export type MessageTemplateKind =
+  | 'welcome_no_code'
+  | 'welcome_with_code'
+  | 'referral_return'
+  | 'credit_expiring'
+  | 'credit_used'
+  | 'otp'
+  | 'offer_footer';
+
+export interface MessageTemplate {
+  id: string;
+  kind: MessageTemplateKind;
+  body: string;
+  dlt_template_id: string | null;
+  updated_at: string;
+  updated_by: string;
+}
+
 export interface DatabaseSchema {
   customers: Customer[];
   referral_codes: ReferralCode[];
@@ -129,17 +153,51 @@ export interface DatabaseSchema {
   credit_redemptions: CreditRedemption[];
   messages: MessageRecord[];
   otp_codes: OtpCode[];
+  redemption_tokens: RedemptionToken[];
   settings: Settings;
   staff: Staff[];
   audit_log: AuditLog[];
+  message_templates: MessageTemplate[];
 }
 
 const DB_DIR = path.resolve(process.cwd(), '.data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
 
+export function getDefaultDatabaseSchema(): DatabaseSchema {
+  const now = new Date().toISOString();
+  return {
+    customers: [],
+    referral_codes: [],
+    sales: [],
+    credits: [],
+    credit_redemptions: [],
+    messages: [],
+    otp_codes: [],
+    redemption_tokens: [],
+    settings: {
+      scheme_enabled: true,
+      a_return_type: 'percent',
+      a_return_value: 20,
+      b_credit_type: 'percent',
+      b_credit_value: 10,
+      b_credit_cap: null,
+      min_bill_for_referral: null,
+      expiry_days: 90,
+      reminder_days_before: 7,
+      max_credit_share: 50,
+      shop_name: 'Demo Salon',
+      updated_at: now,
+      updated_by: 'system',
+    },
+    staff: [],
+    audit_log: [],
+    message_templates: [],
+  };
+}
+
 class Database {
   private data: DatabaseSchema;
-  private isLocked: boolean = false;
+  private transactionDepth: number = 0;
 
   constructor() {
     this.data = this.loadOrInit();
@@ -153,47 +211,19 @@ class Database {
     if (fs.existsSync(DB_FILE)) {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (!parsed.redemption_tokens) parsed.redemption_tokens = [];
+        if (!parsed.message_templates) parsed.message_templates = [];
+        // Migration check for old tally_bill_no or paise or shop_name
+        return parsed;
       } catch (err) {
         console.error('Error reading db.json, reinitializing...', err);
       }
     }
 
-    const initial = this.getDefaultData();
+    const initial = getDefaultDatabaseSchema();
     this.saveData(initial);
     return initial;
-  }
-
-  private getDefaultData(): DatabaseSchema {
-    const now = new Date().toISOString();
-    return {
-      customers: [],
-      referral_codes: [],
-      sales: [],
-      credits: [],
-      credit_redemptions: [],
-      messages: [],
-      otp_codes: [],
-      settings: {
-        scheme_enabled: true,
-        b_discount_type: 'percent',
-        b_discount_value: 10,
-        b_discount_cap: null,
-        a_credit_type: 'percent',
-        a_credit_value: 20,
-        min_bill_for_referral: null,
-        pending_days: 7,
-        expiry_days: 90,
-        reminder_days_before: 7,
-        max_credit_share: 50,
-        shop_name: 'Shehzaadi',
-        message_language: 'English',
-        updated_at: now,
-        updated_by: 'system',
-      },
-      staff: [],
-      audit_log: [],
-    };
   }
 
   private saveData(data: DatabaseSchema) {
@@ -205,28 +235,39 @@ class Database {
     fs.renameSync(tempFile, DB_FILE);
   }
 
-  // Atomically perform transaction with snapshot rollback on failure
   public transaction<T>(callback: (db: DatabaseSchema) => T): T {
-    // Basic mutex lock for single-process concurrency
-    let lockRetries = 0;
-    while (this.isLocked && lockRetries < 50) {
-      // Busy wait synchronous yield
-      const start = Date.now();
-      while (Date.now() - start < 10) {}
-      lockRetries++;
+    if (this.transactionDepth > 0) {
+      return callback(this.data);
     }
 
-    this.isLocked = true;
+    this.transactionDepth++;
     const snapshot = JSON.parse(JSON.stringify(this.data));
     try {
       const result = callback(this.data);
+      if (result && typeof (result as any).then === 'function') {
+        return ((result as unknown) as Promise<any>)
+          .then((res) => {
+            this.saveData(this.data);
+            return res;
+          })
+          .catch((err) => {
+            this.data = snapshot;
+            throw err;
+          })
+          .finally(() => {
+            this.transactionDepth--;
+          }) as any;
+      }
       this.saveData(this.data);
       return result;
     } catch (err) {
       this.data = snapshot;
+      this.transactionDepth--;
       throw err;
     } finally {
-      this.isLocked = false;
+      if (this.transactionDepth > 0) {
+        this.transactionDepth--;
+      }
     }
   }
 
@@ -235,8 +276,20 @@ class Database {
   }
 
   public resetToDefault() {
-    this.transaction(() => {
-      this.data = this.getDefaultData();
+    this.transaction((database) => {
+      const def = getDefaultDatabaseSchema();
+      database.customers = def.customers;
+      database.referral_codes = def.referral_codes;
+      database.sales = def.sales;
+      database.credits = def.credits;
+      database.credit_redemptions = def.credit_redemptions;
+      database.messages = def.messages;
+      database.otp_codes = def.otp_codes;
+      database.redemption_tokens = def.redemption_tokens;
+      database.settings = def.settings;
+      database.staff = def.staff;
+      database.audit_log = def.audit_log;
+      database.message_templates = def.message_templates;
       return true;
     });
   }

@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { apiRouter } from './server/routes/api.ts';
+import { db } from './server/db.ts';
 import { AuthService } from './server/services/auth.ts';
 import { BusinessService } from './server/services/business.ts';
 
@@ -32,7 +33,9 @@ async function startServer() {
       const istMin = (istMinutes % 1440) % 60;
       if (istHour === 9 && istMin === 0) {
         console.log('[Schedule] Triggering 09:00 IST daily job...');
-        BusinessService.runDailyJob();
+        db.transaction((database) => {
+          BusinessService.runDailyJob(database);
+        });
       }
     } catch (err) {
       console.error('[Schedule Error]', err);

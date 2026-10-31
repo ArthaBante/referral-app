@@ -37,12 +37,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div>
               <div className="font-bold text-base sm:text-lg leading-tight tracking-tight text-amber-200">
-                {shopName || 'Shehzaadi'}
+                {shopName || 'Demo Salon'}
               </div>
               <div className="text-xs text-rose-200 flex items-center gap-1 font-medium">
-                <span>Raigarh Portal</span>
+                <span>RefFrnd Portal</span>
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span className="text-[11px] text-emerald-300">IST / Tally Ready</span>
+                <span className="text-[11px] text-emerald-300">UK Ready</span>
               </div>
             </div>
           </div>
@@ -94,7 +94,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => setCurrentTab('tests')}
+              onClick={() => {
+                if (!currentUser) {
+                  onOpenLogin();
+                } else if (currentUser.role !== 'owner') {
+                  alert('Owner access required to run acceptance tests. Please log in as owner (owner / change-me).');
+                } else {
+                  setCurrentTab('tests');
+                }
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
                 currentTab === 'tests'
                   ? 'bg-amber-400 text-rose-950 shadow-sm font-semibold'
@@ -102,7 +110,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span className="hidden sm:inline">19 Acceptance</span> Tests
+              <span className="hidden sm:inline">10 Acceptance</span> Tests
             </button>
           </nav>
 
@@ -112,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center space-x-2">
                 <div className="hidden md:flex flex-col text-right">
                   <span className="text-xs font-semibold text-white leading-tight">
-                    {currentUser.name.replace(/Sunil Agrawal/i, 'Krishna Udasi')}
+                    {currentUser.name}
                   </span>
                   <span className="text-[10px] text-amber-300 uppercase tracking-wider font-bold">
                     Role: {currentUser.role}

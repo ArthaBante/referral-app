@@ -1,23 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../lib/api.ts';
 import { StaffUser, SaleItem } from '../types/index.ts';
+import { QrScannerModal } from './QrScannerModal.tsx';
 import {
   Phone,
   User,
   Tag,
   CreditCard,
   QrCode,
-  ShieldAlert,
   CheckCircle2,
   Receipt,
-  RotateCcw,
   Sparkles,
   ArrowRight,
   Search,
   MessageSquare,
   AlertTriangle,
   KeyRound,
-  ExternalLink,
 } from 'lucide-react';
 
 interface CashierPortalProps {
@@ -31,7 +29,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   onOpenLogin,
   onViewCustomerPortal,
 }) => {
-  // Mode: 'new_sale' or 'find_sale'
   const [mode, setMode] = useState<'new_sale' | 'find_sale'>('new_sale');
 
   // Customer & Phone State
@@ -40,10 +37,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [customerExists, setCustomerExists] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
-  const [customerPersonalToken, setCustomerPersonalToken] = useState('');
-  const [activeCreditRupees, setActiveCreditRupees] = useState(0);
-  const [pendingCreditRupees, setPendingCreditRupees] = useState(0);
-  const [marketingConsent, setMarketingConsent] = useState(false); // default no
+  const [activeCreditPounds, setActiveCreditPounds] = useState(0);
+  const [marketingConsent, setMarketingConsent] = useState(false);
 
   // Referral Code state
   const [showReferralInput, setShowReferralInput] = useState(false);
@@ -51,24 +46,26 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [referralValid, setReferralValid] = useState<boolean | null>(null);
   const [referralReason, setReferralReason] = useState<string | null>(null);
   const [referralOwnerName, setReferralOwnerName] = useState<string | null>(null);
+  const [friendCreditPounds, setFriendCreditPounds] = useState(0);
+  const [promisedReturnPounds, setPromisedReturnPounds] = useState(0);
 
   // Credit Usage state
   const [wantUseCredit, setWantUseCredit] = useState(false);
-  const [creditAuthMethod, setCreditAuthMethod] = useState<'none' | 'qr' | 'otp'>('none');
   const [creditAuthVerified, setCreditAuthVerified] = useState(false);
+  const [redemptionToken, setRedemptionToken] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
-  // Bill & Tally fields
+  // Bill & Receipt Ref fields
   const [billAmountInput, setBillAmountInput] = useState('');
-  const [tallyBillNo, setTallyBillNo] = useState('');
+  const [receiptRef, setReceiptRef] = useState('');
 
   // Live calculation breakdown
-  const [calcDiscountRupees, setCalcDiscountRupees] = useState(0);
-  const [calcCreditUsedRupees, setCalcCreditUsedRupees] = useState(0);
-  const [calcFinalPayableRupees, setCalcFinalPayableRupees] = useState(0);
+  const [calcCreditUsedPounds, setCalcCreditUsedPounds] = useState(0);
+  const [calcFinalPayablePounds, setCalcFinalPayablePounds] = useState(0);
   const [instructions, setInstructions] = useState('');
 
   // Status & Confirmation
@@ -76,27 +73,17 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saleSavedResult, setSaleSavedResult] = useState<any | null>(null);
 
-  // Find Sale / Returns state
+  // Find Sale
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SaleItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [returnSuccessMsg, setReturnSuccessMsg] = useState<string | null>(null);
 
-  // Auto-generate realistic Tally bill number helper
-  useEffect(() => {
-    if (!tallyBillNo && mode === 'new_sale') {
-      const randomSeq = Math.floor(100 + Math.random() * 900);
-      setTallyBillNo(`TL-26-${randomSeq}`);
-    }
-  }, [mode, tallyBillNo]);
-
-  // Recalculate bill whenever bill amount, referral, or credit selection changes
+  // Recalculate bill
   useEffect(() => {
     const billNum = parseFloat(billAmountInput);
     if (!phoneInput || isNaN(billNum) || billNum <= 0) {
-      setCalcDiscountRupees(0);
-      setCalcCreditUsedRupees(0);
-      setCalcFinalPayableRupees(isNaN(billNum) ? 0 : billNum);
+      setCalcCreditUsedPounds(0);
+      setCalcFinalPayablePounds(isNaN(billNum) ? 0 : billNum);
       setInstructions('');
       return;
     }
@@ -105,13 +92,13 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       try {
         const res = await ApiClient.calculateBill({
           phone: phoneInput,
-          billAmountRupees: billNum,
+          billAmountPounds: billNum,
           referralCode: referralValid ? referralCodeInput.trim() : undefined,
           useCredit: wantUseCredit && creditAuthVerified,
+          verified: creditAuthVerified,
         });
-        setCalcDiscountRupees(res.discountRupees);
-        setCalcCreditUsedRupees(res.creditUsedRupees);
-        setCalcFinalPayableRupees(res.finalPayableRupees);
+        setCalcCreditUsedPounds(res.creditUsedPounds);
+        setCalcFinalPayablePounds(res.finalPayablePounds);
         setInstructions(res.instructions);
       } catch (e) {
         // Silent catch during typing
@@ -121,7 +108,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     return () => clearTimeout(timer);
   }, [billAmountInput, phoneInput, referralValid, referralCodeInput, wantUseCredit, creditAuthVerified]);
 
-  // Phone lookup handler
   const handlePhoneLookup = async (phoneToLookup: string) => {
     setErrorMsg(null);
     setLoading(true);
@@ -134,23 +120,19 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       if (res.exists) {
         setCustomerId(res.customerId || null);
         setCustomerName(res.name || '');
-        setCustomerPersonalToken(res.personalToken || '');
-        setActiveCreditRupees(res.activeCreditRupees || 0);
-        setPendingCreditRupees(res.pendingCreditRupees || 0);
+        setActiveCreditPounds(res.activeCreditPounds || 0);
         setMarketingConsent(Boolean(res.marketingConsent));
-        // Reset referral code (referral codes are only for new customers)
         setShowReferralInput(false);
         setReferralCodeInput('');
         setReferralValid(null);
       } else {
         setCustomerId(null);
         setCustomerName('');
-        setCustomerPersonalToken('');
-        setActiveCreditRupees(0);
-        setPendingCreditRupees(0);
+        setActiveCreditPounds(0);
         setMarketingConsent(false);
         setWantUseCredit(false);
         setCreditAuthVerified(false);
+        setRedemptionToken(null);
       }
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -159,23 +141,27 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     }
   };
 
-  // Referral code validation
   const handleValidateReferral = async () => {
     if (!referralCodeInput.trim() || !phoneInput) return;
     setErrorMsg(null);
     try {
       const billNum = parseFloat(billAmountInput) || 0;
-      const res = await ApiClient.validateReferral(referralCodeInput, phoneInput, billNum > 0 ? billNum : undefined);
+      const res = await ApiClient.validateReferral(
+        referralCodeInput,
+        phoneInput,
+        billNum > 0 ? billNum : undefined
+      );
       setReferralValid(res.valid);
       setReferralReason(res.reason || null);
       setReferralOwnerName(res.ownerName || null);
+      setFriendCreditPounds(res.friendCreditPounds || 0);
+      setPromisedReturnPounds(res.promisedReturnPounds || 0);
     } catch (err: any) {
       setReferralValid(false);
       setReferralReason(err.message);
     }
   };
 
-  // Credit Auth: Request OTP
   const handleRequestOtp = async () => {
     if (!customerId) return;
     setOtpError(null);
@@ -190,36 +176,34 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     }
   };
 
-  // Credit Auth: Verify OTP
   const handleVerifyOtp = async () => {
     if (!customerId || !otpInput.trim()) return;
     setOtpError(null);
     try {
       const res = await ApiClient.verifyOtp(customerId, otpInput);
-      if (res.verified) {
+      if (res.verified && res.redemptionToken) {
         setCreditAuthVerified(true);
-        setCreditAuthMethod('otp');
+        setRedemptionToken(res.redemptionToken);
       }
     } catch (err: any) {
       setOtpError(err.message);
     }
   };
 
-  // Credit Auth: Verify QR (or customer personal token)
-  const handleVerifyQr = async (scannedValue: string) => {
+  const handleScannedPersonalQr = async (scannedValue: string) => {
     if (!customerId) return;
     try {
       const res = await ApiClient.verifyPersonalQr(customerId, scannedValue);
-      if (res.verified) {
+      if (res.verified && res.redemptionToken) {
         setCreditAuthVerified(true);
-        setCreditAuthMethod('qr');
+        setRedemptionToken(res.redemptionToken);
+        alert(`QR Verified successfully for ${res.customerName}! Store credit is unlocked for this bill.`);
       }
     } catch (err: any) {
-      alert(`QR verification failed: ${err.message}`);
+      alert(`QR verification error: ${err.message}`);
     }
   };
 
-  // Save Sale Handler
   const handleSaveSale = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) {
@@ -233,17 +217,12 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       return;
     }
 
-    if (!tallyBillNo.trim()) {
-      setErrorMsg('Tally bill number is required');
-      return;
-    }
-
     if (!customerExists && !customerName.trim()) {
       setErrorMsg('Customer name is required for new customers');
       return;
     }
 
-    if (wantUseCredit && !creditAuthVerified) {
+    if (wantUseCredit && (!creditAuthVerified || !redemptionToken)) {
       setErrorMsg('Store credit requires OTP or Personal QR verification before saving.');
       return;
     }
@@ -255,11 +234,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
         phone: phoneInput,
         name: !customerExists ? customerName : undefined,
         marketingConsent,
-        tallyBillNo: tallyBillNo.trim(),
-        billAmountRupees: billNum,
+        receiptRef: receiptRef.trim() ? receiptRef.trim() : undefined,
+        billAmountPounds: billNum,
         referralCode: referralValid ? referralCodeInput.trim() : undefined,
-        useCredit: wantUseCredit && creditAuthVerified,
-        verifiedCreditAuth: wantUseCredit ? creditAuthMethod as any : undefined,
+        creditToUsePounds: wantUseCredit && creditAuthVerified ? calcCreditUsedPounds : undefined,
+        redemptionToken: wantUseCredit && creditAuthVerified ? redemptionToken || undefined : undefined,
       });
 
       setSaleSavedResult(res);
@@ -270,40 +249,36 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     }
   };
 
-  // Reset to next customer (under 2 seconds reset)
   const handleNextCustomer = () => {
     setPhoneInput('');
     setPhoneLookupDone(false);
     setCustomerExists(false);
     setCustomerId(null);
     setCustomerName('');
-    setCustomerPersonalToken('');
-    setActiveCreditRupees(0);
-    setPendingCreditRupees(0);
+    setActiveCreditPounds(0);
     setMarketingConsent(false);
     setShowReferralInput(false);
     setReferralCodeInput('');
     setReferralValid(null);
     setReferralReason(null);
     setReferralOwnerName(null);
+    setFriendCreditPounds(0);
+    setPromisedReturnPounds(0);
     setWantUseCredit(false);
-    setCreditAuthMethod('none');
     setCreditAuthVerified(false);
+    setRedemptionToken(null);
     setOtpSent(false);
     setOtpInput('');
     setDevOtpHint(null);
     setBillAmountInput('');
-    const randomSeq = Math.floor(100 + Math.random() * 900);
-    setTallyBillNo(`TL-26-${randomSeq}`);
-    setCalcDiscountRupees(0);
-    setCalcCreditUsedRupees(0);
-    setCalcFinalPayableRupees(0);
+    setReceiptRef('');
+    setCalcCreditUsedPounds(0);
+    setCalcFinalPayablePounds(0);
     setInstructions('');
     setErrorMsg(null);
     setSaleSavedResult(null);
   };
 
-  // Find Sales Search
   const handleSearchSales = async () => {
     setSearchLoading(true);
     try {
@@ -316,26 +291,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     }
   };
 
-  // Mark Returned
-  const handleMarkReturned = async (saleId: string) => {
-    if (!confirm('Are you sure you want to mark this sale as returned? If referral credit is still pending, it will be cancelled.')) {
-      return;
-    }
-    try {
-      const res = await ApiClient.markReturned(saleId);
-      setReturnSuccessMsg(`Sale ${res.tallyBillNo} marked returned.`);
-      if (res.referralCancelled) {
-        setReturnSuccessMsg(`Sale ${res.tallyBillNo} returned. Referrer pending credit cancelled and code restored to unused.`);
-      }
-      handleSearchSales();
-    } catch (err: any) {
-      alert(`Return error: ${err.message}`);
-    }
-  };
-
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
-      {/* Top Counter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-rose-900 text-amber-300 rounded-xl">
@@ -343,7 +300,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-rose-950 tracking-tight">Billing Counter</h1>
-            <p className="text-xs text-neutral-500">Record Tally sale, apply referral discounts & redeem credit</p>
+            <p className="text-xs text-neutral-500">Record sale, issue store credit & redeem balance</p>
           </div>
         </div>
 
@@ -370,12 +327,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             }`}
           >
             <Search className="w-4 h-4" />
-            <span>Find Sale / Returns</span>
+            <span>Find Sale</span>
           </button>
         </div>
       </div>
 
-      {/* VIEW: SALE SAVED CONFIRMATION (Under 30s flow completion) */}
       {saleSavedResult && (
         <div className="bg-white rounded-2xl border-2 border-emerald-500 shadow-xl p-5 sm:p-7 mb-6 animate-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 text-emerald-700 mb-4 pb-3 border-b border-emerald-100">
@@ -385,46 +341,49 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             <div>
               <h2 className="text-xl font-black text-emerald-900">Sale Successfully Saved!</h2>
               <p className="text-xs text-emerald-700 font-medium">
-                Tally Bill #{saleSavedResult.tallyBillNo} · {saleSavedResult.customerName} ({saleSavedResult.customerPhone})
+                {saleSavedResult.receiptRef ? `Receipt #${saleSavedResult.receiptRef} · ` : ''}{saleSavedResult.customerName} ({saleSavedResult.customerPhone})
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-neutral-50 p-4 rounded-xl mb-4 border border-neutral-200 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-neutral-50 p-4 rounded-xl mb-4 border border-neutral-200 text-center">
             <div>
               <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Bill Total</div>
-              <div className="text-lg font-bold text-neutral-900">₹{saleSavedResult.billAmountRupees}</div>
+              <div className="text-lg font-bold text-neutral-900">£{saleSavedResult.billAmountPounds.toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-rose-600 font-semibold">Discount Given</div>
-              <div className="text-lg font-bold text-rose-700">₹{saleSavedResult.discountRupees}</div>
+              <div className="text-[11px] uppercase tracking-wider text-amber-600 font-semibold">Credit Redeemed</div>
+              <div className="text-lg font-bold text-amber-700">£{saleSavedResult.creditUsedPounds.toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-amber-600 font-semibold">Credit Used</div>
-              <div className="text-lg font-bold text-amber-700">₹{saleSavedResult.creditUsedRupees}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-emerald-700 font-semibold">Tally Net Cash</div>
-              <div className="text-xl font-black text-emerald-800">₹{saleSavedResult.finalAmountRupees}</div>
+              <div className="text-[11px] uppercase tracking-wider text-emerald-700 font-semibold">Net Payable</div>
+              <div className="text-xl font-black text-emerald-800">£{saleSavedResult.finalAmountPounds.toFixed(2)}</div>
             </div>
           </div>
 
-          {/* Referral Credit notice if applied */}
+          {saleSavedResult.friendCreditPounds > 0 && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-3 flex items-center gap-2 text-xs text-emerald-900">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                <strong>£{saleSavedResult.friendCreditPounds.toFixed(2)} store credit</strong> added to customer's account for their next visit!
+              </span>
+            </div>
+          )}
+
           {saleSavedResult.referrerName && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-center gap-2 text-xs text-amber-900">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
                 Referrer <strong>{saleSavedResult.referrerName}</strong> earned{' '}
-                <strong>₹{saleSavedResult.referrerPendingCreditRupees} store credit</strong> (Pending for 7 days).
+                <strong>£{saleSavedResult.referrerReturnPounds.toFixed(2)} return back</strong> added to their account!
               </span>
             </div>
           )}
 
-          {/* Customer Messages Dispatched */}
           <div className="mb-6 bg-rose-50/60 border border-rose-100 rounded-xl p-3.5">
             <div className="text-xs font-bold text-rose-950 flex items-center gap-1.5 mb-2">
               <MessageSquare className="w-3.5 h-3.5 text-rose-700" />
-              <span>Transactional Messages Dispatched (Dev Mode):</span>
+              <span>Transactional Messages Dispatched:</span>
             </div>
             <div className="space-y-2">
               {saleSavedResult.messagesSent?.map((msg: any) => (
@@ -446,21 +405,10 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               <span>Next Customer</span>
               <ArrowRight className="w-5 h-5" />
             </button>
-            {customerPersonalToken && (
-              <button
-                type="button"
-                onClick={() => onViewCustomerPortal(customerPersonalToken)}
-                className="py-3 px-4 rounded-xl border border-rose-300 text-rose-900 hover:bg-rose-50 text-xs font-bold flex items-center justify-center gap-1.5"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Open Customer's Pass</span>
-              </button>
-            )}
           </div>
         </div>
       )}
 
-      {/* VIEW: NEW SALE FORM */}
       {mode === 'new_sale' && !saleSavedResult && (
         <form onSubmit={handleSaveSale} className="space-y-5">
           {errorMsg && (
@@ -470,12 +418,12 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           )}
 
-          {/* STEP 1: PHONE NUMBER LOOKUP */}
+          {/* STEP 1: UK MOBILE LOOKUP */}
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <label className="text-xs font-black uppercase tracking-wider text-rose-900 flex items-center gap-1.5">
                 <Phone className="w-4 h-4 text-rose-700" />
-                <span>Step 1: Customer Mobile (10-Digit)</span>
+                <span>Step 1: UK Mobile Number</span>
               </label>
               {phoneLookupDone && (
                 <span
@@ -490,35 +438,34 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
 
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <span className="absolute left-3.5 top-3.5 font-bold text-neutral-400 text-sm">+91</span>
                 <input
                   type="tel"
-                  maxLength={10}
-                  value={phoneInput.replace('+91', '')}
+                  value={phoneInput}
                   onChange={(e) => {
-                    const digits = e.target.value.replace(/\D/g, '');
-                    setPhoneInput(digits);
-                    if (digits.length === 10) {
-                      handlePhoneLookup(digits);
+                    const val = e.target.value;
+                    setPhoneInput(val);
+                    const digits = val.replace(/\D/g, '');
+                    if (digits.length >= 10) {
+                      handlePhoneLookup(val);
                     } else {
                       setPhoneLookupDone(false);
                     }
                   }}
-                  placeholder="9827100001"
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-neutral-300 focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20 text-lg font-bold tracking-wider outline-none transition"
+                  placeholder="07700 900123"
+                  className="w-full px-4 py-3 rounded-xl border-2 border-neutral-300 focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20 text-lg font-bold tracking-wider outline-none transition"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => handlePhoneLookup(phoneInput)}
-                disabled={loading || phoneInput.length < 10}
+                disabled={loading || !phoneInput.trim()}
                 className="px-5 py-3 rounded-xl bg-rose-900 hover:bg-rose-800 text-white font-bold text-sm shadow-sm transition disabled:opacity-40"
               >
                 Lookup
               </button>
             </div>
 
-            {/* Quick Test Number Chips */}
+            {/* Quick Sample Chips */}
             <div className="mt-3 flex items-center gap-1.5 flex-wrap">
               <span className="text-[11px] text-neutral-400 font-semibold flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-amber-500" />
@@ -527,29 +474,28 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setPhoneInput('9827100001');
-                  handlePhoneLookup('9827100001');
+                  setPhoneInput('07700 900101');
+                  handlePhoneLookup('07700 900101');
                 }}
                 className="text-[11px] bg-rose-50 hover:bg-rose-100 text-rose-900 px-2 py-0.5 rounded-lg border border-rose-200 font-medium"
               >
-                Sunita (+919827100001)
+                Emma (07700 900101)
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setPhoneInput('9827100003');
-                  handlePhoneLookup('9827100003');
+                  setPhoneInput('07700 900103');
+                  handlePhoneLookup('07700 900103');
                 }}
                 className="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-200 font-medium"
               >
-                Anita (+919827100003 - ₹150 credit)
+                Oliver (07700 900103 - £10 credit)
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  const randomDigits = Math.floor(6000000000 + Math.random() * 3999999999).toString();
-                  setPhoneInput(randomDigits);
-                  handlePhoneLookup(randomDigits);
+                  setPhoneInput('07700 900999');
+                  handlePhoneLookup('07700 900999');
                 }}
                 className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-700 px-2 py-0.5 rounded-lg border border-neutral-300 font-medium"
               >
@@ -557,7 +503,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               </button>
             </div>
 
-            {/* IF NEW CUSTOMER: Form */}
             {phoneLookupDone && !customerExists && (
               <div className="mt-4 pt-4 border-t border-neutral-200 space-y-3 animate-in fade-in duration-150">
                 <div>
@@ -570,7 +515,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                       type="text"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="e.g. Rekha Soni"
+                      placeholder="e.g. Jessica Miller"
                       required
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-neutral-300 focus:border-rose-600 text-sm font-semibold outline-none"
                     />
@@ -590,7 +535,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                   </label>
                 </div>
 
-                {/* Apply Referral Code Button for New Customer */}
                 <div className="pt-2">
                   {!showReferralInput ? (
                     <button
@@ -630,7 +574,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                             setReferralCodeInput(e.target.value.toUpperCase());
                             setReferralValid(null);
                           }}
-                          placeholder="e.g. SUN789"
+                          placeholder="e.g. EMM789"
                           className="w-full px-3 py-2 rounded-lg border border-neutral-300 uppercase tracking-widest font-mono font-bold text-base outline-none"
                         />
                         <button
@@ -643,11 +587,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                       </div>
 
                       {referralValid === true && (
-                        <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>
-                            Valid referral from <strong>{referralOwnerName}</strong>! Friend gets 10% discount.
-                          </span>
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 font-semibold space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Code valid. No discount today. {customerName ? `${customerName} gets` : 'Customer gets'} £{friendCreditPounds.toFixed(2)} store credit for next visit. {referralOwnerName || 'Referrer'} gets £{promisedReturnPounds.toFixed(2)} back.</span>
+                          </div>
                         </div>
                       )}
 
@@ -663,7 +607,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               </div>
             )}
 
-            {/* IF EXISTING CUSTOMER: Details & Credit Balance */}
             {phoneLookupDone && customerExists && (
               <div className="mt-4 pt-4 border-t border-neutral-200 space-y-3 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between">
@@ -671,35 +614,15 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                     <div className="text-base font-black text-rose-950">{customerName}</div>
                     <div className="text-xs text-neutral-500 font-medium">{phoneInput}</div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onViewCustomerPortal(customerPersonalToken)}
-                    className="text-xs text-rose-800 hover:text-rose-900 font-bold underline flex items-center gap-1"
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                    <span>View Pass</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-right">
                     <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-                      Active Store Credit
+                      Account Balance
                     </div>
-                    <div className="text-2xl font-black text-amber-950">₹{activeCreditRupees}</div>
-                    <div className="text-[10px] text-amber-700">Spendable in-store</div>
-                  </div>
-                  <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl">
-                    <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
-                      Pending Credit
-                    </div>
-                    <div className="text-2xl font-black text-neutral-700">₹{pendingCreditRupees}</div>
-                    <div className="text-[10px] text-neutral-500">Unlocks after return period</div>
+                    <div className="text-2xl font-black text-amber-950">£{activeCreditPounds.toFixed(2)}</div>
                   </div>
                 </div>
 
-                {/* Redeem Credit Options */}
-                {activeCreditRupees > 0 && (
+                {activeCreditPounds > 0 && (
                   <div className="pt-1">
                     {!wantUseCredit ? (
                       <button
@@ -708,7 +631,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                         className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-rose-950 font-black text-xs shadow-xs flex items-center justify-center gap-2 transition"
                       >
                         <CreditCard className="w-4 h-4" />
-                        <span>Use ₹{activeCreditRupees} Store Credit On This Bill</span>
+                        <span>Use £{activeCreditPounds.toFixed(2)} Store Credit On This Bill</span>
                       </button>
                     ) : (
                       <div className="p-3.5 bg-amber-50/80 border border-amber-300 rounded-xl space-y-3">
@@ -722,6 +645,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                             onClick={() => {
                               setWantUseCredit(false);
                               setCreditAuthVerified(false);
+                              setRedemptionToken(null);
                             }}
                             className="text-[11px] text-neutral-600 hover:underline"
                           >
@@ -732,25 +656,23 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                         {creditAuthVerified ? (
                           <div className="p-2.5 bg-emerald-100 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-900 flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Customer Verified ({creditAuthMethod.toUpperCase()}). Credit will be applied!</span>
+                            <span>Customer Verified (Single-use token issued). Credit ready to apply!</span>
                           </div>
                         ) : (
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-2">
-                              {/* Option A: Personal QR verification */}
                               <button
                                 type="button"
-                                onClick={() => handleVerifyQr(customerPersonalToken)}
+                                onClick={() => setIsQrScannerOpen(true)}
                                 className="p-2.5 bg-white border border-neutral-300 hover:border-rose-600 rounded-xl text-left transition"
                               >
                                 <div className="text-xs font-bold text-neutral-900 flex items-center gap-1">
                                   <QrCode className="w-3.5 h-3.5 text-rose-700" />
                                   <span>Scan Customer QR</span>
                                 </div>
-                                <div className="text-[10px] text-neutral-500 mt-0.5">Show personal pass QR</div>
+                                <div className="text-[10px] text-neutral-500 mt-0.5">Camera / Type token</div>
                               </button>
 
-                              {/* Option B: Send OTP */}
                               <button
                                 type="button"
                                 onClick={handleRequestOtp}
@@ -764,7 +686,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                               </button>
                             </div>
 
-                            {/* OTP Entry Box */}
                             {otpSent && (
                               <div className="p-2.5 bg-white rounded-xl border border-neutral-300 space-y-2">
                                 <div className="flex items-center justify-between">
@@ -772,9 +693,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                                   {devOtpHint && (
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        setOtpInput(devOtpHint);
-                                      }}
+                                      onClick={() => setOtpInput(devOtpHint)}
                                       className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono font-bold"
                                     >
                                       Dev Auto-fill: {devOtpHint}
@@ -816,24 +735,24 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             <div className="mb-3">
               <label className="text-xs font-black uppercase tracking-wider text-rose-900 flex items-center gap-1.5">
                 <Receipt className="w-4 h-4 text-rose-700" />
-                <span>Step 2: Tally Bill Details</span>
+                <span>Step 2: Bill Details</span>
               </label>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">
-                  Bill Amount (₹) <span className="text-red-500">*</span>
+                  Bill Amount (£) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-3 font-bold text-neutral-400 text-sm">₹</span>
+                  <span className="absolute left-3.5 top-3 font-bold text-neutral-400 text-sm">£</span>
                   <input
                     type="number"
-                    min="1"
-                    step="1"
+                    min="0.01"
+                    step="0.01"
                     value={billAmountInput}
                     onChange={(e) => setBillAmountInput(e.target.value)}
-                    placeholder="1000"
+                    placeholder="60.00"
                     required
                     className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-neutral-300 focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20 text-lg font-black text-neutral-900 outline-none"
                   />
@@ -842,40 +761,36 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">
-                  Tally Bill Number <span className="text-red-500">*</span>
+                  Receipt number (optional)
                 </label>
                 <input
                   type="text"
-                  value={tallyBillNo}
-                  onChange={(e) => setTallyBillNo(e.target.value)}
-                  placeholder="TL-2026-001"
-                  required
+                  value={receiptRef}
+                  onChange={(e) => setReceiptRef(e.target.value)}
+                  placeholder="REC-001"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-300 focus:border-rose-600 text-base font-bold text-neutral-900 font-mono uppercase outline-none"
                 />
               </div>
             </div>
 
-            {/* LIVE TALLY SUMMARY BANNER */}
             {instructions && (
               <div className="mt-4 p-4 rounded-xl bg-amber-50 border-2 border-amber-400 text-amber-950 animate-in fade-in duration-150">
                 <div className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-1 flex items-center gap-1">
                   <Sparkles className="w-4 h-4 text-amber-600" />
-                  <span>Exact Counter Action For Tally:</span>
+                  <span>Till Action Instructions:</span>
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-rose-950 leading-tight">
+                <div className="text-base sm:text-lg font-black text-rose-950 leading-tight">
                   {instructions}
                 </div>
                 <div className="mt-2 pt-2 border-t border-amber-200/80 flex items-center justify-between text-xs font-semibold text-neutral-700">
-                  <span>Gross: ₹{billAmountInput || 0}</span>
-                  {calcDiscountRupees > 0 && <span className="text-rose-700">Discount: -₹{calcDiscountRupees}</span>}
-                  {calcCreditUsedRupees > 0 && <span className="text-amber-800">Credit: -₹{calcCreditUsedRupees}</span>}
-                  <span className="text-emerald-800 font-bold text-sm">Collect: ₹{calcFinalPayableRupees}</span>
+                  <span>Gross: £{parseFloat(billAmountInput || '0').toFixed(2)}</span>
+                  {calcCreditUsedPounds > 0 && <span className="text-amber-800">Credit: -£{calcCreditUsedPounds.toFixed(2)}</span>}
+                  <span className="text-emerald-800 font-bold text-sm">Collect at Till: £{calcFinalPayablePounds.toFixed(2)}</span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* STEP 3: SUBMIT BUTTON */}
           <div className="pt-2">
             <button
               type="submit"
@@ -887,27 +802,16 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               ) : (
                 <>
                   <Receipt className="w-5 h-5 text-amber-300" />
-                  <span>Save Sale & Send Customer SMS</span>
+                  <span>Save Sale & Issue Store Credit</span>
                 </>
               )}
             </button>
-            <p className="text-center text-xs text-neutral-400 mt-2">
-              Validates referral code, issues store credit, sends SMS/WhatsApp pass link in 1 tap.
-            </p>
           </div>
         </form>
       )}
 
-      {/* VIEW: FIND SALE / RETURNS */}
       {mode === 'find_sale' && (
         <div className="space-y-4">
-          {returnSuccessMsg && (
-            <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>{returnSuccessMsg}</span>
-            </div>
-          )}
-
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-4">
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -916,7 +820,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by Tally bill number or customer phone..."
+                  placeholder="Search sales by receipt number or customer phone..."
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-neutral-300 text-sm font-medium outline-none"
                 />
               </div>
@@ -940,55 +844,32 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               searchResults.map((sale) => (
                 <div
                   key={sale.id}
-                  className={`p-4 bg-white rounded-2xl border transition shadow-xs ${
-                    sale.status === 'returned' ? 'border-neutral-200 bg-neutral-50/70 opacity-70' : 'border-rose-100'
-                  }`}
+                  className="p-4 bg-white rounded-2xl border border-neutral-200 transition shadow-xs"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2 pb-2 border-b border-neutral-100">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-sm text-rose-950">
-                          {sale.tally_bill_no}
+                          {sale.receipt_ref || 'No Receipt Ref'}
                         </span>
-                        {sale.status === 'returned' ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-200 text-neutral-700">
-                            Returned
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            Completed
-                          </span>
-                        )}
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          Completed
+                        </span>
                       </div>
                       <div className="text-xs text-neutral-500 font-medium">
-                        {sale.customerName} ({sale.customerPhone}) · {new Date(sale.created_at).toLocaleDateString('en-IN')}
+                        {sale.customerName} ({sale.customerPhone}) · {new Date(sale.created_at).toLocaleDateString('en-GB')}
                       </div>
                     </div>
-
-                    {sale.status !== 'returned' && (
-                      <button
-                        type="button"
-                        onClick={() => handleMarkReturned(sale.id)}
-                        className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold flex items-center gap-1 self-start sm:self-auto"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Mark Returned</span>
-                      </button>
-                    )}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <span className="text-neutral-400 block text-[10px]">Bill Amount</span>
-                      <span className="font-bold text-neutral-800">₹{sale.billAmountRupees}</span>
+                      <span className="font-bold text-neutral-800">£{sale.billAmountPounds.toFixed(2)}</span>
                     </div>
                     <div>
-                      <span className="text-neutral-400 block text-[10px]">Discount</span>
-                      <span className="font-bold text-rose-700">₹{sale.discountAmountRupees}</span>
-                    </div>
-                    <div>
-                      <span className="text-neutral-400 block text-[10px]">Credit Used</span>
-                      <span className="font-bold text-amber-800">₹{sale.creditUsedRupees}</span>
+                      <span className="text-neutral-400 block text-[10px]">Credit Redeemed</span>
+                      <span className="font-bold text-amber-800">£{sale.creditUsedPounds.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -997,6 +878,13 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           </div>
         </div>
       )}
+
+      <QrScannerModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onScan={handleScannedPersonalQr}
+        title="Scan Customer Personal Pass"
+      />
     </div>
   );
 };

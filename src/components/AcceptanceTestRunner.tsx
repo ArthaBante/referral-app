@@ -43,8 +43,8 @@ export const AcceptanceTestRunner: React.FC = () => {
               </h1>
             </div>
             <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
-              Automated execution of all 19 mandatory business rule scenarios defined in the Referral Portal Build
-              Spec, testing transactional integrity, locking, OTP lockouts, credit FIFO, and return rollbacks.
+              Automated execution of all 24 mandatory business rule scenarios defined in the Referral Portal Build
+              Spec, testing transactional integrity, locking, OTP lockouts, credit FIFO, and message template customization.
             </p>
           </div>
 
@@ -56,12 +56,12 @@ export const AcceptanceTestRunner: React.FC = () => {
             {running ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Running Scenarios 1–19...</span>
+                <span>Running Scenarios 1–24...</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-white" />
-                <span>Run All 19 Acceptance Tests</span>
+                <span>Run All 24 Acceptance Tests</span>
               </>
             )}
           </button>

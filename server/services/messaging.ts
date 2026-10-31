@@ -1,4 +1,4 @@
-import { db, MessageRecord, Settings } from '../db.ts';
+import { DatabaseSchema, MessageRecord, MessageTemplate, MessageTemplateKind, Settings } from '../db.ts';
 import crypto from 'crypto';
 
 export interface SendMessageParams {
@@ -8,9 +8,9 @@ export interface SendMessageParams {
     name?: string;
     link?: string;
     b_reward?: string;
-    a_reward?: string;
+    a_amount?: string;
+    credit?: string;
     amount?: string;
-    date?: string;
     expiry?: string;
     used?: string;
     balance?: string;
@@ -19,110 +19,216 @@ export interface SendMessageParams {
   };
 }
 
-export class MessagingService {
-  private formatAmount(paiseOrString: number | string): string {
-    if (typeof paiseOrString === 'number') {
-      return `₹${Math.round(paiseOrString / 100)}`;
+export interface TemplateConfigDef {
+  kind: MessageTemplateKind;
+  title: string;
+  description: string;
+  requiredPlaceholders: string[];
+  supportedPlaceholders: string[];
+  defaultEn: string;
+}
+
+export const TEMPLATE_CONFIG: Record<MessageTemplateKind, TemplateConfigDef> = {
+  welcome_no_code: {
+    kind: 'welcome_no_code',
+    title: 'Welcome — new customer, no code',
+    description: 'Sent to a new customer after their first purchase when they did not use a referral code.',
+    requiredPlaceholders: ['link'],
+    supportedPlaceholders: ['shop', 'name', 'link', 'b_reward', 'a_amount'],
+    defaultEn: '{shop}: Thanks {name}! Your account and referral code: {link}. Give your code to one friend: they get {b_reward} credit, you get {a_amount} back.',
+  },
+  welcome_with_code: {
+    kind: 'welcome_with_code',
+    title: "Welcome — new customer who used a friend's code",
+    description: "Sent to a new customer after their first purchase when they used a friend's referral code.",
+    requiredPlaceholders: ['link'],
+    supportedPlaceholders: ['shop', 'name', 'link', 'b_reward', 'a_amount', 'credit'],
+    defaultEn: "{shop}: Thanks {name}! Your account and referral code: {link}. Give your code to one friend: they get {b_reward} credit, you get {a_amount} back. You have {credit} store credit for your next visit.",
+  },
+  referral_return: {
+    kind: 'referral_return',
+    title: 'Referral return',
+    description: 'Sent to Emma when her friend uses her code.',
+    requiredPlaceholders: ['amount'],
+    supportedPlaceholders: ['shop', 'name', 'link', 'amount', 'expiry'],
+    defaultEn: '{shop}: Your friend shopped with us! {amount} added to your account. Use it by {expiry}: {link}',
+  },
+  credit_expiring: {
+    kind: 'credit_expiring',
+    title: 'Credit expiring reminder',
+    description: 'Sent to a customer when their store credit is about to expire.',
+    requiredPlaceholders: ['amount', 'expiry'],
+    supportedPlaceholders: ['shop', 'name', 'link', 'amount', 'expiry'],
+    defaultEn: '{shop}: {amount} of your store credit expires on {expiry}. Visit us before then!',
+  },
+  credit_used: {
+    kind: 'credit_used',
+    title: 'Credit used receipt',
+    description: 'Sent to a customer after they redeem store credit against a bill.',
+    requiredPlaceholders: ['used', 'balance'],
+    supportedPlaceholders: ['shop', 'name', 'link', 'used', 'balance'],
+    defaultEn: '{shop}: {used} credit used today. Balance: {balance}.',
+  },
+  otp: {
+    kind: 'otp',
+    title: 'OTP for using credit',
+    description: 'Sent to a customer to authorize store credit redemption at checkout.',
+    requiredPlaceholders: ['otp'],
+    supportedPlaceholders: ['shop', 'name', 'otp'],
+    defaultEn: '{shop}: Your code to use store credit is {otp}. Valid 5 minutes.',
+  },
+  offer_footer: {
+    kind: 'offer_footer',
+    title: 'Offer footer',
+    description: 'The opt-out line appended to the end of every marketing offer broadcast.',
+    requiredPlaceholders: ['link'],
+    supportedPlaceholders: ['shop', 'link'],
+    defaultEn: ' Reply STOP or use {link} to stop offers.',
+  },
+};
+
+export function validateTemplate(kind: MessageTemplateKind, body: string): { valid: boolean; error?: string } {
+  if (!body || !body.trim()) {
+    return { valid: false, error: 'Template text cannot be empty.' };
+  }
+
+  const config = TEMPLATE_CONFIG[kind];
+  if (!config) {
+    return { valid: false, error: `Invalid template kind: ${kind}.` };
+  }
+
+  const matches = body.match(/\{([a-zA-Z0-9_]+)\}/g) || [];
+  const foundPlaceholders = matches.map((m) => m.slice(1, -1));
+
+  for (const ph of foundPlaceholders) {
+    if (!config.supportedPlaceholders.includes(ph)) {
+      return {
+        valid: false,
+        error: `Unknown or unsupported placeholder '{${ph}}' for ${config.title}. Supported placeholders: ${config.supportedPlaceholders.map((p) => `{${p}}`).join(', ')}`,
+      };
     }
-    return String(paiseOrString);
+  }
+
+  for (const reqPh of config.requiredPlaceholders) {
+    if (!foundPlaceholders.includes(reqPh)) {
+      return {
+        valid: false,
+        error: `Required placeholder '{${reqPh}}' is missing from ${config.title}.`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+export function renderTemplateText(
+  templateText: string,
+  data: Record<string, string | undefined>
+): string {
+  return templateText.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
+    return data[key] !== undefined ? String(data[key]) : match;
+  });
+}
+
+export class MessagingService {
+  public getTemplate(
+    database: DatabaseSchema | undefined,
+    kind: MessageTemplateKind
+  ): string {
+    const config = TEMPLATE_CONFIG[kind];
+    if (database && database.message_templates) {
+      const stored = database.message_templates.find((t) => t.kind === kind);
+      if (stored && stored.body && stored.body.trim()) {
+        return stored.body;
+      }
+    }
+    return config.defaultEn;
   }
 
   private buildMessageBody(
+    database: DatabaseSchema,
     kind: MessageRecord['kind'],
     settings: Settings,
     data: SendMessageParams['data']
   ): string {
-    const shop = settings.shop_name || 'Shehzaadi';
-    const lang = settings.message_language || 'English';
+    const shop = settings.shop_name || 'Demo Salon';
 
     if (kind === 'offer') {
-      const base = data.customBody || '';
-      const stopNotice = lang === 'Hindi'
-        ? ` ऑफर्स रोकने के लिए ${data.link} खोलें।`
-        : ` Reply STOP or use ${data.link} to stop offers.`;
-      return `${base.trim()}${stopNotice}`.trim();
+      const base = (data.customBody || '').trim();
+      const footerTpl = this.getTemplate(database, 'offer_footer');
+      const footer = renderTemplateText(footerTpl, { shop, link: data.link || '' });
+      return `${base}${footer.startsWith(' ') ? '' : ' '}${footer.trim()}`.trim();
     }
 
-    let enText = '';
-    let hiText = '';
-
-    switch (kind) {
-      case 'welcome':
-        enText = `${shop}: Thanks ${data.name || 'valued customer'}! Your credit and referral code: ${data.link}. Give your code to a friend: they get ${data.b_reward} off, you get ${data.a_reward} credit.`;
-        hiText = `${shop}: धन्यवाद ${data.name || 'ग्राहक'}! आपका क्रेडिट और रेफरल कोड: ${data.link}। दोस्त को दें: उन्हें ${data.b_reward} छूट, आपको ${data.a_reward} क्रेडिट।`;
-        break;
-
-      case 'credit_pending':
-        enText = `${shop}: Your friend shopped with us! ${data.amount} credit will be ready on ${data.date}.`;
-        hiText = `${shop}: आपकी सहेली ने खरीदारी की! ${data.amount} क्रेडिट ${data.date} को सक्रिय होगा।`;
-        break;
-
-      case 'credit_ready':
-        enText = `${shop}: Your ${data.amount} store credit is ready. Use it by ${data.expiry}: ${data.link}`;
-        hiText = `${shop}: आपका ${data.amount} स्टोर क्रेडिट सक्रिय है। ${data.expiry} तक उपयोग करें: ${data.link}`;
-        break;
-
-      case 'credit_expiring':
-        enText = `${shop}: ${data.amount} of your store credit expires on ${data.expiry}. Visit us before then!`;
-        hiText = `${shop}: आपका ${data.amount} स्टोर क्रेडिट ${data.expiry} को समाप्त हो रहा है। जल्द पधारें!`;
-        break;
-
-      case 'credit_used':
-        enText = `${shop}: ${data.used} credit used today. Balance: ${data.balance}.`;
-        hiText = `${shop}: आज ${data.used} क्रेडिट उपयोग हुआ। शेष बैलेंस: ${data.balance}।`;
-        break;
-
-      case 'otp':
-        enText = `${shop}: Your code to use store credit is ${data.otp}. Valid 5 minutes.`;
-        hiText = `${shop}: स्टोर क्रेडिट उपयोग के लिए आपका कोड ${data.otp} है। 5 मिनट मान्य।`;
-        break;
+    let templateKind: MessageTemplateKind;
+    if (kind === 'welcome') {
+      templateKind = data.credit ? 'welcome_with_code' : 'welcome_no_code';
+    } else if (kind === 'referral_return') {
+      templateKind = 'referral_return';
+    } else if (kind === 'credit_expiring') {
+      templateKind = 'credit_expiring';
+    } else if (kind === 'credit_used') {
+      templateKind = 'credit_used';
+    } else if (kind === 'otp') {
+      templateKind = 'otp';
+    } else {
+      templateKind = 'welcome_no_code';
     }
 
-    if (lang === 'Hindi') {
-      return hiText || enText;
-    } else if (lang === 'both') {
-      return `${enText}\n\n${hiText}`;
-    }
-    return enText;
+    const tpl = this.getTemplate(database, templateKind);
+
+    const values: Record<string, string | undefined> = {
+      shop,
+      name: data.name || 'valued customer',
+      link: data.link || '',
+      b_reward: data.b_reward || '',
+      a_amount: data.a_amount || '',
+      credit: data.credit || '',
+      amount: data.amount || '',
+      expiry: data.expiry || '',
+      used: data.used || '',
+      balance: data.balance || '',
+      otp: data.otp || '',
+    };
+
+    return renderTemplateText(tpl, values);
   }
 
-  public send(params: SendMessageParams): MessageRecord {
-    return db.transaction((database) => {
-      const settings = database.settings;
-      const body = this.buildMessageBody(params.kind, settings, params.data);
+  public send(database: DatabaseSchema, params: SendMessageParams): MessageRecord {
+    const settings = database.settings;
+    const body = this.buildMessageBody(database, params.kind, settings, params.data);
 
-      const channel = (process.env.MESSAGING_PROVIDER as any) || 'dev';
-      const record: MessageRecord = {
-        id: crypto.randomUUID(),
-        customer_id: params.customerId,
-        kind: params.kind,
-        channel: channel === 'sms' ? 'sms' : channel === 'whatsapp' ? 'whatsapp' : 'dev',
-        body,
-        status: 'sent',
-        error: null,
-        sent_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
+    const channelEnv = process.env.MESSAGING_PROVIDER || 'dev';
+    const channel = channelEnv === 'sms' ? 'sms' : channelEnv === 'whatsapp' ? 'whatsapp' : 'dev';
 
-      database.messages.unshift(record);
-      // In dev mode, message is logged
-      console.log(`[Messaging - ${record.channel.toUpperCase()}] -> Customer ${params.customerId} [${params.kind}]: ${body}`);
-      return record;
-    });
+    const record: MessageRecord = {
+      id: crypto.randomUUID(),
+      customer_id: params.customerId,
+      kind: params.kind,
+      channel,
+      body,
+      status: 'sent',
+      error: null,
+      sent_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    database.messages.unshift(record);
+    if (channel === 'dev') {
+      console.log(`[Messaging - DEV] -> Customer ${params.customerId} [${params.kind}]: ${body}`);
+    }
+    return record;
   }
 
-  public retry(messageId: string): MessageRecord {
-    return db.transaction((database) => {
-      const msg = database.messages.find((m) => m.id === messageId);
-      if (!msg) {
-        throw new Error('Message not found');
-      }
-      msg.status = 'sent';
-      msg.error = null;
-      msg.sent_at = new Date().toISOString();
-      console.log(`[Messaging - RETRIED] Message ${messageId} successfully resent.`);
-      return { ...msg };
-    });
+  public retry(database: DatabaseSchema, messageId: string): MessageRecord {
+    const msg = database.messages.find((m) => m.id === messageId);
+    if (!msg) {
+      throw new Error('Message not found');
+    }
+    msg.status = 'sent';
+    msg.error = null;
+    msg.sent_at = new Date().toISOString();
+    return { ...msg };
   }
 }
 

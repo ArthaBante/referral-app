@@ -1,30 +1,51 @@
-import { db, Customer, ReferralCode, Sale, Credit, Settings } from '../db.ts';
+import { DatabaseSchema, Customer, ReferralCode, Sale, Credit, Settings, RedemptionToken } from '../db.ts';
 import { messagingService } from './messaging.ts';
 import crypto from 'crypto';
 
+export interface SaveSaleInput {
+  phone: string;
+  name?: string;
+  marketingConsent?: boolean;
+  receiptRef?: string;
+  billAmountPounds: number;
+  referralCode?: string;
+  creditToUsePounds?: number;
+  redemptionToken?: string;
+}
+
 export class BusinessService {
-  // Helpers for Indian mobile numbers
-  public static normalizeIndianPhone(input: string): string {
+  public static normalizeUkPhone(input: string): string {
+    if (!input || !input.trim()) {
+      throw new Error('Please enter a UK mobile number, e.g. 07700 900123');
+    }
     const digits = input.replace(/\D/g, '');
     let phone10 = '';
-    if (digits.length === 10) {
+    if (digits.length === 10 && digits.startsWith('7')) {
       phone10 = digits;
-    } else if (digits.length === 12 && digits.startsWith('91')) {
-      phone10 = digits.slice(2);
-    } else if (digits.length === 11 && digits.startsWith('0')) {
+    } else if (digits.length === 11 && digits.startsWith('07')) {
       phone10 = digits.slice(1);
+    } else if (digits.length === 12 && digits.startsWith('447')) {
+      phone10 = digits.slice(2);
     } else {
-      throw new Error('Please enter a valid 10-digit Indian mobile number');
+      throw new Error('Please enter a UK mobile number, e.g. 07700 900123');
     }
 
-    if (!/^[6-9]\d{9}$/.test(phone10)) {
-      throw new Error('Indian mobile numbers must start with 6, 7, 8, or 9');
+    if (!/^7\d{9}$/.test(phone10)) {
+      throw new Error('Please enter a UK mobile number, e.g. 07700 900123');
     }
 
-    return `+91${phone10}`;
+    return `+44${phone10}`;
   }
 
-  // Generates 6-character code avoiding O, I, 0, 1
+  public static formatUkPhone(storedPhone: string): string {
+    const digits = storedPhone.replace(/\D/g, '');
+    if (digits.startsWith('447') && digits.length === 12) {
+      const local = '0' + digits.slice(2);
+      return `${local.slice(0, 5)} ${local.slice(5)}`;
+    }
+    return storedPhone;
+  }
+
   public static generateReferralCode(): string {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let code = '';
@@ -36,37 +57,76 @@ export class BusinessService {
   }
 
   public static generatePersonalToken(): string {
-    return crypto.randomBytes(24).toString('hex'); // 48 chars
+    return crypto.randomBytes(24).toString('hex');
   }
 
-  public static rupeesToPaise(rupees: number): number {
-    return Math.round(rupees * 100);
+  public static generateRedemptionToken(): string {
+    return crypto.randomBytes(24).toString('hex');
   }
 
-  public static paiseToRupees(paise: number): number {
-    return Math.round(paise / 100);
+  public static poundsToPence(pounds: number): number {
+    return Math.round(pounds * 100);
   }
 
-  // Round calculated amounts to nearest whole rupee in paise
-  public static roundToRupeePaise(paiseAmount: number): number {
-    return Math.round(paiseAmount / 100) * 100;
+  public static penceToPounds(pence: number): number {
+    return pence / 100;
   }
 
-  // Floor to whole rupee in paise for credit cap
-  public static floorToRupeePaise(paiseAmount: number): number {
-    return Math.floor(paiseAmount / 100) * 100;
+  public static formatPounds(pence: number): string {
+    return `£${(pence / 100).toFixed(2)}`;
   }
 
-  // Validate referral code according to section 4 rules
+  public static formatShortDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      day: 'numeric',
+      month: 'short',
+    }).format(d);
+  }
+
+  public static formatRewardLabel(type: 'percent' | 'fixed', value: number): string {
+    return type === 'percent' ? `${value}%` : `£${value}`;
+  }
+
+  // Calculate promised referrer return on customer's own first purchase of billAmountPence
+  public static calculateReferrerReturn(billAmountPence: number, settings: Settings): number {
+    if (billAmountPence <= 0) return 0;
+    if (settings.a_return_type === 'percent') {
+      const calculated = (billAmountPence * settings.a_return_value) / 100;
+      return Math.round(calculated); // nearest penny
+    } else {
+      return settings.a_return_value * 100;
+    }
+  }
+
+  // Calculate friend B's store credit on their first purchase of billAmountPence
+  public static calculateFriendCredit(billAmountPence: number, settings: Settings): number {
+    if (billAmountPence <= 0) return 0;
+    let creditPence = 0;
+    if (settings.b_credit_type === 'percent') {
+      const calculated = (billAmountPence * settings.b_credit_value) / 100;
+      creditPence = Math.round(calculated); // nearest penny
+      if (settings.b_credit_cap) {
+        creditPence = Math.min(creditPence, settings.b_credit_cap * 100);
+      }
+    } else {
+      creditPence = Math.min(settings.b_credit_value * 100, billAmountPence);
+    }
+    return creditPence;
+  }
+
   public static validateReferralCode(
+    database: DatabaseSchema,
     codeStr: string,
     buyerPhone: string,
-    billAmountPaise?: number
+    billAmountPence?: number
   ): { valid: boolean; reason?: string; referralCode?: ReferralCode; ownerCustomer?: Customer } {
-    const snapshot = db.getSnapshot();
     const cleanCode = codeStr.trim().toUpperCase();
 
-    const referralCode = snapshot.referral_codes.find((rc) => rc.code === cleanCode);
+    const referralCode = database.referral_codes.find((rc) => rc.code === cleanCode);
     if (!referralCode) {
       return { valid: false, reason: 'Code not found' };
     }
@@ -75,186 +135,529 @@ export class BusinessService {
       return { valid: false, reason: 'Code already used' };
     }
 
-    if (!snapshot.settings.scheme_enabled) {
+    if (!database.settings.scheme_enabled) {
       return { valid: false, reason: 'Referral scheme is paused' };
     }
 
-    const ownerCustomer = snapshot.customers.find((c) => c.id === referralCode.owner_customer_id);
+    const ownerCustomer = database.customers.find((c) => c.id === referralCode.owner_customer_id);
     if (!ownerCustomer) {
       return { valid: false, reason: 'Code owner not found' };
     }
 
-    // Checked before rule 4, so self-use gets the clearer message
-    const normalizedBuyerPhone = this.normalizeIndianPhone(buyerPhone);
+    const normalizedBuyerPhone = this.normalizeUkPhone(buyerPhone);
     if (ownerCustomer.phone === normalizedBuyerPhone) {
       return { valid: false, reason: "Can't use your own code" };
     }
 
-    const existingBuyer = snapshot.customers.find((c) => c.phone === normalizedBuyerPhone);
+    const existingBuyer = database.customers.find((c) => c.phone === normalizedBuyerPhone);
     if (existingBuyer) {
       return { valid: false, reason: 'Only for new customers' };
     }
 
-    if (snapshot.settings.min_bill_for_referral && billAmountPaise !== undefined) {
-      const minPaise = snapshot.settings.min_bill_for_referral * 100;
-      if (billAmountPaise < minPaise) {
-        return { valid: false, reason: `Bill must be at least ₹${snapshot.settings.min_bill_for_referral}` };
+    if (database.settings.min_bill_for_referral && billAmountPence !== undefined) {
+      const minPence = database.settings.min_bill_for_referral * 100;
+      if (billAmountPence < minPence) {
+        return { valid: false, reason: `Bill must be at least £${database.settings.min_bill_for_referral}` };
       }
     }
 
     return { valid: true, referralCode, ownerCustomer };
   }
 
-  // Calculate B's discount
-  public static calculateDiscount(billAmountPaise: number, settings: Settings): number {
-    if (billAmountPaise <= 0) return 0;
-
-    let discountPaise = 0;
-    if (settings.b_discount_type === 'percent') {
-      const calculated = (billAmountPaise * settings.b_discount_value) / 100;
-      discountPaise = this.roundToRupeePaise(calculated);
-      if (settings.b_discount_cap) {
-        const capPaise = settings.b_discount_cap * 100;
-        discountPaise = Math.min(discountPaise, capPaise);
-      }
-    } else {
-      // Fixed discount
-      const fixedPaise = settings.b_discount_value * 100;
-      discountPaise = Math.min(fixedPaise, billAmountPaise);
-    }
-    return Math.min(discountPaise, billAmountPaise);
-  }
-
-  // Calculate A's credit (based on bill amount before B's discount)
-  public static calculateCredit(billAmountPaise: number, settings: Settings): number {
-    if (billAmountPaise <= 0) return 0;
-
-    let creditPaise = 0;
-    if (settings.a_credit_type === 'percent') {
-      const calculated = (billAmountPaise * settings.a_credit_value) / 100;
-      creditPaise = this.roundToRupeePaise(calculated);
-    } else {
-      // Fixed credit
-      creditPaise = settings.a_credit_value * 100;
-    }
-    return creditPaise;
-  }
-
-  // Calculate usable credit for a customer on a given bill
   public static calculateUsableCredit(
+    database: DatabaseSchema,
     customerId: string,
-    billAmountPaise: number
+    billAmountPence: number
   ): { totalActiveCredit: number; maxUsableCredit: number; lots: Credit[] } {
-    const snapshot = db.getSnapshot();
-    const activeLots = snapshot.credits
+    const activeLots = database.credits
       .filter((c) => c.customer_id === customerId && c.status === 'active' && c.remaining > 0)
       .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
 
     const totalActiveCredit = activeLots.reduce((sum, c) => sum + c.remaining, 0);
-    const maxCreditSharePercent = snapshot.settings.max_credit_share || 50;
+    const maxCreditSharePercent = database.settings.max_credit_share || 50;
 
-    // usable = min(customer's total active credit, floor(bill_amount * max_credit_share / 100))
-    const maxAllowedByBill = this.floorToRupeePaise((billAmountPaise * maxCreditSharePercent) / 100);
+    const maxAllowedByBill = Math.round((billAmountPence * maxCreditSharePercent) / 100);
     const maxUsableCredit = Math.min(totalActiveCredit, maxAllowedByBill);
 
     return { totalActiveCredit, maxUsableCredit, lots: activeLots };
   }
 
-  // Format rewards for message templates
-  public static formatRewardLabel(type: 'percent' | 'fixed', value: number): string {
-    return type === 'percent' ? `${value}%` : `₹${value}`;
+  public static requestOtp(
+    database: DatabaseSchema,
+    customerId: string
+  ): { success: boolean; devOtp?: string; expiresAt: string } {
+    const customer = database.customers.find((c) => c.id === customerId);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
+    const recentOtps = database.otp_codes.filter(
+      (o) => o.customer_id === customerId && o.created_at >= oneHourAgo
+    );
+
+    if (recentOtps.length >= 3) {
+      throw new Error('Rate limit exceeded: Maximum 3 OTPs allowed per hour for this customer');
+    }
+
+    const otpDigits = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = crypto.createHash('sha256').update(otpDigits).digest('hex');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    database.otp_codes.push({
+      id: crypto.randomUUID(),
+      customer_id: customerId,
+      code_hash: codeHash,
+      code_plain: otpDigits,
+      expires_at: expiresAt,
+      attempts: 0,
+      used_at: null,
+      created_at: new Date().toISOString(),
+    });
+
+    messagingService.send(database, {
+      customerId: customer.id,
+      kind: 'otp',
+      data: { otp: otpDigits },
+    });
+
+    const isDev = !process.env.MESSAGING_PROVIDER || process.env.MESSAGING_PROVIDER === 'dev';
+    return {
+      success: true,
+      devOtp: isDev ? otpDigits : undefined,
+      expiresAt,
+    };
   }
 
-  // Run the daily scheduled job (09:00 IST logic)
-  public static runDailyJob(): { activated: number; expired: number; remindersSent: number } {
-    return db.transaction((database) => {
-      const now = new Date();
-      const settings = database.settings;
-      let activatedCount = 0;
-      let expiredCount = 0;
-      let remindersSentCount = 0;
+  public static verifyOtp(
+    database: DatabaseSchema,
+    customerId: string,
+    otpInput: string
+  ): { verified: boolean; redemptionToken: string } {
+    const now = new Date();
+    const otps = database.otp_codes
+      .filter((o) => o.customer_id === customerId && !o.used_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      // 1. Release pending credits where available_at <= now
+    const activeOtp = otps[0];
+    if (!activeOtp) {
+      throw new Error('No active OTP found. Please send a new OTP.');
+    }
+
+    if (new Date(activeOtp.expires_at) < now) {
+      throw new Error('OTP has expired. Please send a new OTP.');
+    }
+
+    if (activeOtp.attempts >= 5) {
+      throw new Error('OTP locked: Maximum 5 attempts exceeded. Cashier must send a new OTP.');
+    }
+
+    const inputHash = crypto.createHash('sha256').update(otpInput.trim()).digest('hex');
+    if (inputHash !== activeOtp.code_hash) {
+      activeOtp.attempts += 1;
+      const remaining = 5 - activeOtp.attempts;
+      if (remaining <= 0) {
+        throw new Error('OTP locked: Maximum 5 attempts exceeded. Cashier must send a new OTP.');
+      }
+      throw new Error(`Incorrect OTP. ${remaining} attempts remaining.`);
+    }
+
+    activeOtp.used_at = now.toISOString();
+
+    const token = this.generateRedemptionToken();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    database.redemption_tokens.push({
+      id: crypto.randomUUID(),
+      customer_id: customerId,
+      token,
+      expires_at: expiresAt,
+      used: false,
+      created_at: now.toISOString(),
+    });
+
+    return { verified: true, redemptionToken: token };
+  }
+
+  public static verifyPersonalQr(
+    database: DatabaseSchema,
+    customerId: string,
+    scannedTokenOrUrl: string
+  ): { verified: boolean; redemptionToken: string; customerName: string } {
+    const customer = database.customers.find((c) => c.id === customerId);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const tokenPart = scannedTokenOrUrl.includes('/customer/')
+      ? scannedTokenOrUrl.split('/customer/')[1]?.trim()
+      : scannedTokenOrUrl.trim();
+
+    if (tokenPart !== customer.personal_token) {
+      throw new Error('Personal QR does not match this customer!');
+    }
+
+    const token = this.generateRedemptionToken();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    database.redemption_tokens.push({
+      id: crypto.randomUUID(),
+      customer_id: customerId,
+      token,
+      expires_at: expiresAt,
+      used: false,
+      created_at: new Date().toISOString(),
+    });
+
+    return { verified: true, redemptionToken: token, customerName: customer.name };
+  }
+
+  public static saveSale(
+    database: DatabaseSchema,
+    input: SaveSaleInput,
+    staffId: string
+  ) {
+    const {
+      phone,
+      name,
+      marketingConsent,
+      receiptRef,
+      billAmountPounds,
+      referralCode,
+      creditToUsePounds,
+      redemptionToken,
+    } = input;
+
+    if (!phone || billAmountPounds === undefined) {
+      throw new Error('Phone and bill amount are required.');
+    }
+
+    const normalizedPhone = this.normalizeUkPhone(phone);
+    const cleanReceiptRef = receiptRef ? receiptRef.trim().toUpperCase() : null;
+    const billAmountPence = this.poundsToPence(Number(billAmountPounds));
+
+    if (billAmountPence <= 0) {
+      throw new Error('Bill amount must be greater than £0');
+    }
+
+    // Block duplicate receipt numbers ONLY when a receipt number is entered
+    if (cleanReceiptRef) {
+      const duplicateBill = database.sales.find(
+        (s) => s.receipt_ref && s.receipt_ref.toLowerCase() === cleanReceiptRef.toLowerCase()
+      );
+      if (duplicateBill) {
+        throw new Error(`Receipt number "${cleanReceiptRef}" already exists.`);
+      }
+    }
+
+    let customer = database.customers.find((c) => c.phone === normalizedPhone);
+    const isNewCustomer = !customer;
+
+    let appliedReferralCodeRow: ReferralCode | null = null;
+    let referrerCustomer: Customer | null = null;
+    let friendCreditPence = 0;
+    let referrerReturnPence = 0;
+
+    if (referralCode) {
+      const check = this.validateReferralCode(database, referralCode, normalizedPhone, billAmountPence);
+      if (!check.valid) {
+        throw new Error(check.reason || 'Invalid referral code');
+      }
+      appliedReferralCodeRow = check.referralCode!;
+      referrerCustomer = check.ownerCustomer!;
+      friendCreditPence = this.calculateFriendCredit(billAmountPence, database.settings);
+      referrerReturnPence = appliedReferralCodeRow.referrer_return_amount;
+    }
+
+    if (isNewCustomer) {
+      if (!name || !name.trim()) {
+        throw new Error('Customer name is required for new customers.');
+      }
+      const newCustId = crypto.randomUUID();
+      const personalToken = this.generatePersonalToken();
+
+      customer = {
+        id: newCustId,
+        name: name.trim(),
+        phone: normalizedPhone,
+        personal_token: personalToken,
+        marketing_consent: Boolean(marketingConsent),
+        consent_at: new Date().toISOString(),
+        opted_out_at: null,
+        referred_by_customer_id: referrerCustomer ? referrerCustomer.id : null,
+        created_at: new Date().toISOString(),
+      };
+      database.customers.push(customer);
+
+      const promisedReturnOnOwnCode = this.calculateReferrerReturn(billAmountPence, database.settings);
+
+      let uniqueCode = this.generateReferralCode();
+      while (database.referral_codes.some((rc) => rc.code === uniqueCode)) {
+        uniqueCode = this.generateReferralCode();
+      }
+
+      database.referral_codes.push({
+        id: crypto.randomUUID(),
+        code: uniqueCode,
+        owner_customer_id: newCustId,
+        status: 'unused',
+        used_by_customer_id: null,
+        used_sale_id: null,
+        used_at: null,
+        issued_sale_id: '',
+        referrer_return_amount: promisedReturnOnOwnCode,
+        return_settings_snapshot: {
+          a_return_type: database.settings.a_return_type,
+          a_return_value: database.settings.a_return_value,
+        },
+      });
+    }
+
+    if (!customer) {
+      throw new Error('Customer record could not be established.');
+    }
+
+    const requestedCreditPence = creditToUsePounds ? this.poundsToPence(Number(creditToUsePounds)) : 0;
+    let actualCreditUsedPence = 0;
+
+    if (requestedCreditPence > 0) {
+      if (isNewCustomer) {
+        throw new Error('New customers cannot use credit on their first purchase.');
+      }
+
+      if (!redemptionToken) {
+        throw new Error('Store credit redemption requires authentication via OTP or Personal QR.');
+      }
+
+      const tokenRecord = database.redemption_tokens.find(
+        (rt) => rt.token === redemptionToken && rt.customer_id === customer!.id
+      );
+
+      if (!tokenRecord) {
+        throw new Error('Invalid or unauthenticated redemption token.');
+      }
+
+      if (tokenRecord.used) {
+        throw new Error('Redemption token has already been used.');
+      }
+
+      if (new Date(tokenRecord.expires_at) <= new Date()) {
+        throw new Error('Redemption token has expired. Please verify customer again.');
+      }
+
+      tokenRecord.used = true;
+
+      const usable = this.calculateUsableCredit(database, customer.id, billAmountPence);
+      actualCreditUsedPence = Math.min(requestedCreditPence, usable.maxUsableCredit);
+
+      if (actualCreditUsedPence > 0) {
+        let neededPence = actualCreditUsedPence;
+        const activeLots = database.credits
+          .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
+          .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
+
+        for (const lot of activeLots) {
+          if (neededPence <= 0) break;
+          const deduct = Math.min(lot.remaining, neededPence);
+          lot.remaining -= deduct;
+          neededPence -= deduct;
+
+          database.credit_redemptions.push({
+            id: crypto.randomUUID(),
+            credit_id: lot.id,
+            sale_id: '',
+            amount: deduct,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    const saleId = crypto.randomUUID();
+    const saleRecord: Sale = {
+      id: saleId,
+      customer_id: customer.id,
+      receipt_ref: cleanReceiptRef,
+      bill_amount: billAmountPence,
+      credit_used: actualCreditUsedPence,
+      referral_code_id: appliedReferralCodeRow ? appliedReferralCodeRow.id : null,
+      staff_id: staffId,
+      created_at: new Date().toISOString(),
+    };
+    database.sales.push(saleRecord);
+
+    if (isNewCustomer) {
+      const ownCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer!.id);
+      if (ownCode) {
+        ownCode.issued_sale_id = saleId;
+      }
+    }
+
+    for (const cr of database.credit_redemptions) {
+      if (!cr.sale_id) {
+        cr.sale_id = saleId;
+      }
+    }
+
+    const expiryDays = database.settings.expiry_days || 90;
+    const expiresAt = new Date(Date.now() + expiryDays * 86400000).toISOString();
+    const expiryDateStr = this.formatShortDate(expiresAt);
+
+    if (appliedReferralCodeRow && referrerCustomer) {
+      appliedReferralCodeRow.status = 'used';
+      appliedReferralCodeRow.used_by_customer_id = customer.id;
+      appliedReferralCodeRow.used_sale_id = saleId;
+      appliedReferralCodeRow.used_at = new Date().toISOString();
+
+      database.credits.push({
+        id: crypto.randomUUID(),
+        customer_id: referrerCustomer.id,
+        source_sale_id: saleId,
+        amount: referrerReturnPence,
+        remaining: referrerReturnPence,
+        status: 'active',
+        expires_at: expiresAt,
+        source: 'referral_return',
+        settings_snapshot: {
+          expiry_days: database.settings.expiry_days,
+        },
+        reason: `Referral return from ${customer.name}'s first purchase`,
+        created_by_staff_id: staffId,
+        created_at: new Date().toISOString(),
+      });
+
+      database.credits.push({
+        id: crypto.randomUUID(),
+        customer_id: customer.id,
+        source_sale_id: saleId,
+        amount: friendCreditPence,
+        remaining: friendCreditPence,
+        status: 'active',
+        expires_at: expiresAt,
+        source: 'friend_credit',
+        settings_snapshot: {
+          b_credit_type: database.settings.b_credit_type,
+          b_credit_value: database.settings.b_credit_value,
+          expiry_days: database.settings.expiry_days,
+        },
+        reason: `Friend credit using ${referrerCustomer.name}'s referral code`,
+        created_by_staff_id: staffId,
+        created_at: new Date().toISOString(),
+      });
+
+      const appUrl = process.env.APP_URL || '';
+      messagingService.send(database, {
+        customerId: referrerCustomer.id,
+        kind: 'referral_return',
+        data: {
+          amount: this.formatPounds(referrerReturnPence),
+          expiry: expiryDateStr,
+          link: `${appUrl}/customer/${referrerCustomer.personal_token}`,
+        },
+      });
+    }
+
+    const appUrl = process.env.APP_URL || '';
+    const customerLink = `${appUrl}/customer/${customer.personal_token}`;
+
+    if (isNewCustomer) {
+      const ownCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer!.id);
+      const bReward = this.formatRewardLabel(database.settings.b_credit_type, database.settings.b_credit_value);
+      const promisedPounds = ownCode ? this.penceToPounds(ownCode.referrer_return_amount) : 0;
+
+      messagingService.send(database, {
+        customerId: customer.id,
+        kind: 'welcome',
+        data: {
+          name: customer.name,
+          link: customerLink,
+          b_reward: bReward,
+          a_amount: `£${promisedPounds.toFixed(2)}`,
+          credit: friendCreditPence > 0 ? this.formatPounds(friendCreditPence) : undefined,
+        },
+      });
+    } else if (actualCreditUsedPence > 0) {
+      const remainingActivePence = database.credits
+        .filter((c) => c.customer_id === customer!.id && c.status === 'active' && c.remaining > 0)
+        .reduce((sum, c) => sum + c.remaining, 0);
+
+      messagingService.send(database, {
+        customerId: customer.id,
+        kind: 'credit_used',
+        data: {
+          used: this.formatPounds(actualCreditUsedPence),
+          balance: this.formatPounds(remainingActivePence),
+        },
+      });
+    }
+
+    return {
+      saleId,
+      customerName: customer.name,
+      customerPhone: this.formatUkPhone(customer.phone),
+      isNewCustomer,
+      receiptRef: cleanReceiptRef,
+      billAmountPounds: this.penceToPounds(billAmountPence),
+      creditUsedPounds: this.penceToPounds(actualCreditUsedPence),
+      finalAmountPounds: this.penceToPounds(billAmountPence - actualCreditUsedPence),
+      referralCodeUsed: appliedReferralCodeRow?.code || null,
+      referrerName: referrerCustomer?.name || null,
+      referrerReturnPounds: this.penceToPounds(referrerReturnPence),
+      friendCreditPounds: this.penceToPounds(friendCreditPence),
+      messagesSent: database.messages.slice(0, 2),
+    };
+  }
+
+  public static runDailyJob(database: DatabaseSchema): { expired: number; remindersSent: number } {
+    const now = new Date();
+    const settings = database.settings;
+    let expiredCount = 0;
+    let remindersSentCount = 0;
+
+    for (const credit of database.credits) {
+      if (credit.status === 'active' && credit.expires_at) {
+        const expDate = new Date(credit.expires_at);
+        if (expDate <= now) {
+          credit.status = 'expired';
+          credit.remaining = 0;
+          expiredCount++;
+        }
+      }
+    }
+
+    const reminderDays = settings.reminder_days_before || 7;
+    if (reminderDays > 0) {
+      const reminderWindowMs = reminderDays * 86400000;
       for (const credit of database.credits) {
-        if (credit.status === 'pending') {
-          const availDate = new Date(credit.available_at);
-          if (availDate <= now) {
-            credit.status = 'active';
-            const expiryDays = credit.settings_snapshot?.expiry_days || settings.expiry_days || 90;
-            const expDate = new Date(availDate.getTime() + expiryDays * 86400000);
-            credit.expires_at = expDate.toISOString();
-            activatedCount++;
+        if (credit.status === 'active' && credit.remaining > 0 && credit.expires_at && !credit.expiring_notified) {
+          const expDate = new Date(credit.expires_at);
+          const msUntilExpiry = expDate.getTime() - now.getTime();
+          if (msUntilExpiry > 0 && msUntilExpiry <= reminderWindowMs) {
+            credit.expiring_notified = true;
+            remindersSentCount++;
 
-            // Send credit_ready message
             const cust = database.customers.find((c) => c.id === credit.customer_id);
             if (cust) {
-              const appUrl = process.env.APP_URL || '';
-              const link = `${appUrl}/customer/${cust.personal_token}`;
-              messagingService.send({
+              messagingService.send(database, {
                 customerId: cust.id,
-                kind: 'credit_ready',
+                kind: 'credit_expiring',
                 data: {
-                  amount: `₹${this.paiseToRupees(credit.amount)}`,
-                  expiry: expDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-                  link,
+                  amount: this.formatPounds(credit.remaining),
+                  expiry: this.formatShortDate(expDate.toISOString()),
                 },
               });
             }
           }
         }
       }
+    }
 
-      // 2. Expire active credits where expires_at <= now
-      for (const credit of database.credits) {
-        if (credit.status === 'active' && credit.expires_at) {
-          const expDate = new Date(credit.expires_at);
-          if (expDate <= now) {
-            credit.status = 'expired';
-            credit.remaining = 0;
-            expiredCount++;
-          }
-        }
-      }
-
-      // 3. Send expiry reminders (reminder_days_before days before expiry, once per lot)
-      const reminderDays = settings.reminder_days_before || 7;
-      if (reminderDays > 0) {
-        const reminderWindowMs = reminderDays * 86400000;
-        for (const credit of database.credits) {
-          if (credit.status === 'active' && credit.remaining > 0 && credit.expires_at && !credit.expiring_notified) {
-            const expDate = new Date(credit.expires_at);
-            const msUntilExpiry = expDate.getTime() - now.getTime();
-            if (msUntilExpiry > 0 && msUntilExpiry <= reminderWindowMs) {
-              credit.expiring_notified = true;
-              remindersSentCount++;
-
-              const cust = database.customers.find((c) => c.id === credit.customer_id);
-              if (cust) {
-                messagingService.send({
-                  customerId: cust.id,
-                  kind: 'credit_expiring',
-                  data: {
-                    amount: `₹${this.paiseToRupees(credit.remaining)}`,
-                    expiry: expDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-                  },
-                });
-              }
-            }
-          }
-        }
-      }
-
-      // Record audit log
-      database.audit_log.unshift({
-        id: crypto.randomUUID(),
-        staff_id: 'system',
-        action: 'daily_job_executed',
-        details: { activated: activatedCount, expired: expiredCount, remindersSent: remindersSentCount },
-        created_at: new Date().toISOString(),
-      });
-
-      console.log(`[Daily Job] Completed: ${activatedCount} activated, ${expiredCount} expired, ${remindersSentCount} reminders.`);
-      return { activated: activatedCount, expired: expiredCount, remindersSent: remindersSentCount };
+    database.audit_log.unshift({
+      id: crypto.randomUUID(),
+      staff_id: 'system',
+      action: 'daily_job_executed',
+      details: { expired: expiredCount, remindersSent: remindersSentCount },
+      created_at: new Date().toISOString(),
     });
+
+    return { expired: expiredCount, remindersSent: remindersSentCount };
   }
 }

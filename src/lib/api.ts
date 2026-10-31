@@ -7,10 +7,12 @@ import {
   SaleItem,
   MessageItem,
   AuditItem,
+  MessageTemplateItem,
+  TemplateConfigItem,
 } from '../types/index.ts';
 
-const TOKEN_KEY = 'raigarh_staff_token';
-const USER_KEY = 'raigarh_staff_user';
+const TOKEN_KEY = 'reffrnd_staff_token';
+const USER_KEY = 'reffrnd_staff_user';
 
 export class ApiClient {
   public static getToken(): string | null {
@@ -99,31 +101,28 @@ export class ApiClient {
     formattedPhone: string;
     customerId?: string;
     name?: string;
-    activeCreditRupees?: number;
-    pendingCreditRupees?: number;
+    activeCreditPounds?: number;
     marketingConsent?: boolean;
-    personalToken?: string;
   }> {
     return this.request(`/cashier/lookup-customer?phone=${encodeURIComponent(phone)}`);
   }
 
-  public static async validateReferral(code: string, buyerPhone: string, billAmountRupees?: number): Promise<{
+  public static async validateReferral(code: string, buyerPhone: string, billAmountPounds?: number): Promise<{
     valid: boolean;
     reason?: string;
     code?: string;
     ownerName?: string;
-    discountRupees?: number;
-    creditRupees?: number;
+    friendCreditPounds?: number;
+    promisedReturnPounds?: number;
   }> {
     return this.request('/cashier/validate-referral', {
       method: 'POST',
-      body: JSON.stringify({ code, buyerPhone, billAmountRupees }),
+      body: JSON.stringify({ code, buyerPhone, billAmountPounds }),
     });
   }
 
   public static async requestOtp(customerId: string): Promise<{
     success: boolean;
-    message: string;
     devOtp?: string;
     expiresAt: string;
   }> {
@@ -133,14 +132,14 @@ export class ApiClient {
     });
   }
 
-  public static async verifyOtp(customerId: string, otp: string): Promise<{ verified: boolean }> {
+  public static async verifyOtp(customerId: string, otp: string): Promise<{ verified: boolean; redemptionToken: string }> {
     return this.request('/cashier/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ customerId, otp }),
     });
   }
 
-  public static async verifyPersonalQr(customerId: string, scannedTokenOrUrl: string): Promise<{ verified: boolean }> {
+  public static async verifyPersonalQr(customerId: string, scannedTokenOrUrl: string): Promise<{ verified: boolean; redemptionToken: string; customerName: string }> {
     return this.request('/cashier/verify-personal-qr', {
       method: 'POST',
       body: JSON.stringify({ customerId, scannedTokenOrUrl }),
@@ -149,14 +148,14 @@ export class ApiClient {
 
   public static async calculateBill(params: {
     phone: string;
-    billAmountRupees: number;
+    billAmountPounds: number;
     referralCode?: string;
     useCredit?: boolean;
+    verified?: boolean;
   }): Promise<{
-    billAmountRupees: number;
-    discountRupees: number;
-    creditUsedRupees: number;
-    finalPayableRupees: number;
+    billAmountPounds: number;
+    creditUsedPounds: number;
+    finalPayablePounds: number;
     instructions: string;
   }> {
     return this.request('/cashier/calculate-bill', {
@@ -169,11 +168,11 @@ export class ApiClient {
     phone: string;
     name?: string;
     marketingConsent?: boolean;
-    tallyBillNo: string;
-    billAmountRupees: number;
+    receiptRef?: string;
+    billAmountPounds: number;
     referralCode?: string;
-    useCredit?: boolean;
-    verifiedCreditAuth?: 'personal_qr' | 'otp';
+    creditToUsePounds?: number;
+    redemptionToken?: string;
   }): Promise<any> {
     return this.request('/cashier/save-sale', {
       method: 'POST',
@@ -183,13 +182,6 @@ export class ApiClient {
 
   public static async findSales(query: string = ''): Promise<{ sales: SaleItem[] }> {
     return this.request(`/cashier/find-sale?query=${encodeURIComponent(query)}`);
-  }
-
-  public static async markReturned(saleId: string, reason?: string): Promise<any> {
-    return this.request('/cashier/mark-returned', {
-      method: 'POST',
-      body: JSON.stringify({ saleId, reason }),
-    });
   }
 
   // Owner Endpoints
@@ -219,10 +211,10 @@ export class ApiClient {
     return this.request(`/owner/customers/${id}`);
   }
 
-  public static async adjustCredit(customerId: string, amountRupees: number, reason: string): Promise<any> {
+  public static async adjustCredit(customerId: string, amountPounds: number, reason: string): Promise<any> {
     return this.request(`/owner/customers/${customerId}/credit-adjustment`, {
       method: 'POST',
-      body: JSON.stringify({ amountRupees, reason }),
+      body: JSON.stringify({ amountPounds, reason }),
     });
   }
 
@@ -268,6 +260,33 @@ export class ApiClient {
   public static async retryMessage(id: string): Promise<any> {
     return this.request(`/owner/messages/${id}/retry`, {
       method: 'POST',
+    });
+  }
+
+  public static async getMessageTemplates(): Promise<{
+    templates: MessageTemplateItem[];
+    configs: Record<string, TemplateConfigItem>;
+  }> {
+    return this.request('/owner/message-templates');
+  }
+
+  public static async updateMessageTemplate(payload: {
+    kind: string;
+    body: string;
+    dlt_template_id?: string | null;
+  }): Promise<{ success: boolean; template: MessageTemplateItem }> {
+    return this.request('/owner/message-templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public static async resetMessageTemplate(payload: {
+    kind: string;
+  }): Promise<{ success: boolean; template: MessageTemplateItem }> {
+    return this.request('/owner/message-templates/reset', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../lib/api.ts';
 import { CustomerPortalData } from '../types/index.ts';
 import {
-  Sparkles,
   QrCode,
   Share2,
   Clock,
@@ -10,10 +9,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Copy,
-  ExternalLink,
   Smartphone,
-  Gift,
-  BellOff,
 } from 'lucide-react';
 
 interface CustomerPortalProps {
@@ -22,8 +18,7 @@ interface CustomerPortalProps {
 }
 
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) => {
-  // Default to Sunita Sharma's token if none provided
-  const [token, setToken] = useState<string>(initialToken || 'token-sunita-sharma-raigarh-789012345678');
+  const [token, setToken] = useState<string>(initialToken || 'token-emma-smith-uk-789012345678');
   const [data, setData] = useState<CustomerPortalData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +71,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
 
   return (
     <div className="max-w-md mx-auto px-4 py-6 min-h-screen pb-16">
-      {/* Test Token Switcher Bar for Reviewers */}
       <div className="mb-4 p-2.5 bg-neutral-100 rounded-xl border border-neutral-300 text-xs">
         <div className="flex items-center justify-between mb-1.5 text-neutral-600 font-bold">
           <span className="flex items-center gap-1">
@@ -88,39 +82,39 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
         <div className="flex gap-1.5 flex-wrap">
           <button
             onClick={() => {
-              const t = 'token-sunita-sharma-raigarh-789012345678';
+              const t = 'token-emma-smith-uk-789012345678';
               setToken(t);
               fetchCustomerData(t);
             }}
             className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-              token.includes('sunita') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
+              token.includes('emma') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
             }`}
           >
-            Sunita (A)
+            Emma (A)
           </button>
           <button
             onClick={() => {
-              const t = 'token-priya-verma-raigarh-1234567890123';
+              const t = 'token-sophie-taylor-uk-1234567890123';
               setToken(t);
               fetchCustomerData(t);
             }}
             className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-              token.includes('priya') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
+              token.includes('sophie') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
             }`}
           >
-            Priya (B)
+            Sophie (B)
           </button>
           <button
             onClick={() => {
-              const t = 'token-anita-agrawal-raigarh-345678901234';
+              const t = 'token-oliver-jones-uk-345678901234';
               setToken(t);
               fetchCustomerData(t);
             }}
             className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
-              token.includes('anita') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
+              token.includes('oliver') ? 'bg-rose-900 text-white' : 'bg-white border text-neutral-700'
             }`}
           >
-            Anita (Active Credit)
+            Oliver (Active Credit)
           </button>
         </div>
       </div>
@@ -142,35 +136,23 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
 
       {data && !loading && (
         <div className="space-y-4">
-          {/* Header Card */}
           <div className="bg-gradient-to-br from-rose-950 via-rose-900 to-rose-950 text-white p-6 rounded-3xl shadow-xl border border-rose-800/60 relative overflow-hidden text-center">
             <div className="inline-block px-3 py-1 bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded-full text-[11px] font-bold tracking-wider uppercase mb-2">
               Exclusive Member Pass
             </div>
             <h1 className="text-2xl font-black text-amber-200 tracking-tight">{data.shopName}</h1>
             <p className="text-sm text-rose-200 mt-1 font-medium">
-              Namaste, <strong className="text-white">{data.firstName}</strong>!
+              Hello, <strong className="text-white">{data.firstName}</strong>!
             </p>
 
-            {/* Credit Balance Display */}
-            <div className="mt-5 grid grid-cols-2 gap-3 text-left">
-              <div className="bg-white/10 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">
-                  Active Store Credit
-                </span>
-                <span className="text-2xl font-black text-white">₹{data.totalActiveCreditRupees}</span>
-                <span className="text-[10px] text-rose-200 block mt-0.5">Ready to use at counter</span>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-rose-300 block">
-                  Pending Credit
-                </span>
-                <span className="text-2xl font-black text-white">₹{data.totalPendingCreditRupees}</span>
-                <span className="text-[10px] text-rose-200 block mt-0.5">Unlocks after return period</span>
-              </div>
+            <div className="mt-5 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 text-center">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 block">
+                Your account balance
+              </span>
+              <span className="text-3xl font-black text-white mt-1 block">£{data.totalActiveCreditPounds.toFixed(2)}</span>
+              <span className="text-[11px] text-rose-200 block mt-0.5">Store credit ready to use at counter</span>
             </div>
 
-            {/* Active Lots Expiry Breakdown */}
             {data.activeLots.length > 0 && (
               <div className="mt-3 text-left bg-black/20 p-2.5 rounded-xl border border-white/5 space-y-1">
                 <div className="text-[10px] font-bold text-amber-300 flex items-center gap-1">
@@ -179,9 +161,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
                 </div>
                 {data.activeLots.map((lot) => (
                   <div key={lot.id} className="text-[11px] text-rose-100 flex items-center justify-between">
-                    <span>₹{lot.remainingRupees} balance</span>
+                    <span>£{lot.remainingPounds.toFixed(2)} balance</span>
                     <span className="text-amber-300 font-medium">
-                      Expires {lot.expiresAt ? new Date(lot.expiresAt).toLocaleDateString('en-IN') : 'Soon'} (
+                      Expires {lot.expiresAt ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(lot.expiresAt)) : 'Soon'} (
                       {lot.daysLeft} days)
                     </span>
                   </div>
@@ -190,7 +172,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
             )}
           </div>
 
-          {/* CARD 1: PERSONAL COUNTER QR CODE */}
           <div className="bg-white rounded-3xl p-6 shadow-md border border-neutral-200 text-center">
             <div className="flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider text-rose-900 mb-1">
               <QrCode className="w-4 h-4 text-rose-700" />
@@ -214,19 +195,16 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
             </div>
           </div>
 
-          {/* CARD 2: SINGLE-USE REFERRAL CODE & WHATSAPP SHARE */}
           {data.referralCode && (
             <div className="bg-white rounded-3xl p-6 shadow-md border-2 border-amber-300 relative text-center">
               <div className="inline-block px-3 py-1 bg-amber-100 text-amber-900 rounded-full text-[11px] font-black uppercase tracking-wider mb-2">
                 Referral Reward
               </div>
-              <h2 className="text-lg font-black text-rose-950">Give One Friend a Special Discount</h2>
-              <p className="text-xs text-neutral-600 mt-1 max-w-xs mx-auto">
-                Share your code with 1 friend. They get <strong>{data.referralCode.bRewardLabel} off</strong> their
-                first purchase, and you earn store credit!
+              <h2 className="text-lg font-black text-rose-950">Refer a Friend</h2>
+              <p className="text-xs text-neutral-700 mt-1 max-w-xs mx-auto font-medium">
+                Share with one friend: they get <strong>{data.referralCode.bRewardLabel} store credit</strong>, you get <strong>£{data.referralCode.promisedReturnPounds.toFixed(2)} back</strong>.
               </p>
 
-              {/* Status Badge */}
               <div className="my-3">
                 {data.referralCode.status === 'unused' ? (
                   <span className="inline-flex items-center gap-1 text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200">
@@ -240,7 +218,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
                 )}
               </div>
 
-              {/* Code Box */}
               <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 flex items-center justify-center gap-3 my-3">
                 <span className="text-3xl font-mono font-black text-rose-950 tracking-widest">
                   {data.referralCode.code}
@@ -255,7 +232,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               </div>
               {copied && <p className="text-[11px] text-emerald-600 font-bold mb-2">Code copied to clipboard!</p>}
 
-              {/* Referral QR */}
               {data.referralCode.qrDataUri && (
                 <div className="mb-4">
                   <img
@@ -267,7 +243,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
                 </div>
               )}
 
-              {/* Big WhatsApp Share Button */}
               {data.referralCode.status === 'unused' && (
                 <a
                   href={data.referralCode.whatsappShareUrl}
@@ -282,7 +257,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
             </div>
           )}
 
-          {/* Footer & Opt-Out */}
           <div className="text-center pt-2 pb-6 space-y-2">
             {optOutStatus ? (
               <div className="text-xs text-neutral-500 font-medium">{optOutStatus}</div>
@@ -296,7 +270,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               </button>
             )}
             <div className="text-[11px] text-neutral-400">
-              {data.shopName} · Raigarh, Chhattisgarh · Tally Verified
+              {data.shopName} · RefFrnd Portal
             </div>
           </div>
         </div>

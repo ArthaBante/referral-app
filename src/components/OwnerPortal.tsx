@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ApiClient } from '../lib/api.ts';
 import {
   OwnerDashboardData,
@@ -6,6 +6,9 @@ import {
   CustomerListItem,
   MessageItem,
   AuditItem,
+  MessageTemplateItem,
+  TemplateConfigItem,
+  MessageTemplateKind,
 } from '../types/index.ts';
 import {
   LayoutDashboard,
@@ -15,19 +18,85 @@ import {
   UserPlus,
   MessageSquare,
   FileText,
-  Clock,
   Sparkles,
   Download,
-  AlertCircle,
   CheckCircle2,
-  Edit3,
-  Trash2,
   RefreshCw,
   Search,
-  KeyRound,
   Shield,
-  HelpCircle,
+  RotateCcw,
 } from 'lucide-react';
+
+const SAMPLE_PREVIEW_DATA: Record<string, string> = {
+  shop: 'Demo Salon',
+  name: 'Emma',
+  b_reward: '10%',
+  a_amount: '£12.00',
+  credit: '£6.00',
+  amount: '£12.00',
+  expiry: '15 Jan',
+  used: '£10.00',
+  balance: '£5.00',
+  otp: '482913',
+  link: 'ref-frnd.uk/c/abc123',
+};
+
+const TEMPLATE_KINDS_ORDER: MessageTemplateKind[] = [
+  'welcome_no_code',
+  'welcome_with_code',
+  'referral_return',
+  'credit_expiring',
+  'credit_used',
+  'otp',
+  'offer_footer',
+];
+
+const TEMPLATE_META: Record<
+  MessageTemplateKind,
+  { number: number; title: string; note: string }
+> = {
+  welcome_no_code: {
+    number: 1,
+    title: 'Welcome — new customer, no code',
+    note: 'Sent to a new customer after their first purchase when they did not use a referral code.',
+  },
+  welcome_with_code: {
+    number: 2,
+    title: "Welcome — new customer who used a friend's code",
+    note: "Sent to a new customer after their first purchase when they used a friend's referral code.",
+  },
+  referral_return: {
+    number: 3,
+    title: 'Referral return',
+    note: 'Sent to Emma when her friend uses her code.',
+  },
+  credit_expiring: {
+    number: 4,
+    title: 'Credit expiring reminder',
+    note: 'Sent to a customer when their store credit is about to expire.',
+  },
+  credit_used: {
+    number: 5,
+    title: 'Credit used receipt',
+    note: 'Sent to a customer after they redeem credit against a purchase.',
+  },
+  otp: {
+    number: 6,
+    title: 'OTP for using credit',
+    note: 'Sent to a customer to authorize store credit redemption at billing.',
+  },
+  offer_footer: {
+    number: 7,
+    title: 'Offer footer',
+    note: 'The line added to the end of every offer (the offer itself is still written by the owner each time on the Send offer screen).',
+  },
+};
+
+function renderPreviewText(body: string): string {
+  return (body || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
+    return SAMPLE_PREVIEW_DATA[key] !== undefined ? SAMPLE_PREVIEW_DATA[key] : match;
+  });
+}
 
 interface OwnerPortalProps {
   onViewCustomerPortal: (token: string) => void;
@@ -36,18 +105,15 @@ interface OwnerPortalProps {
 export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }) => {
   const [subTab, setSubTab] = useState<'dashboard' | 'settings' | 'customers' | 'offers' | 'staff' | 'messages' | 'audit'>('dashboard');
 
-  // Dashboard Data
   const [dashboard, setDashboard] = useState<OwnerDashboardData | null>(null);
   const [dateFilter, setDateFilter] = useState<'all' | '30' | '90'>('all');
   const [dailyJobRunning, setDailyJobRunning] = useState(false);
   const [dailyJobMessage, setDailyJobMessage] = useState<string | null>(null);
 
-  // Settings Data
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
-  // Customers Data
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -56,31 +122,30 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
   const [adjReason, setAdjReason] = useState('');
   const [adjLoading, setAdjLoading] = useState(false);
 
-  // Send Offer Data
-  const [offerText, setOfferText] = useState('Festive saree collection now in store! Visit this week for exclusive seasonal arrivals.');
+  const [offerText, setOfferText] = useState('Exclusive seasonal discount now available! Visit this week for special offers.');
   const [audienceCount, setAudienceCount] = useState<number>(0);
   const [sendingOffer, setSendingOffer] = useState(false);
   const [offerSuccessMsg, setOfferSuccessMsg] = useState<string | null>(null);
 
-  // Staff Data
   const [staffList, setStaffList] = useState<any[]>([]);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffUsername, setNewStaffUsername] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('change-me');
   const [newStaffRole, setNewStaffRole] = useState<'cashier' | 'owner'>('cashier');
 
-  // Messages Data
+  const [messagesSubTab, setMessagesSubTab] = useState<'log' | 'templates'>('log');
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  // Audit Log Data
+  const [templates, setTemplates] = useState<MessageTemplateItem[]>([]);
+  const [templateConfigs, setTemplateConfigs] = useState<Record<string, TemplateConfigItem>>({});
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateEdits, setTemplateEdits] = useState<Record<string, { body: string; dlt_template_id: string }>>({});
+  const [templateStatus, setTemplateStatus] = useState<Record<string, { error?: string; success?: string; saving?: boolean }>>({});
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
   const [auditLogs, setAuditLogs] = useState<AuditItem[]>([]);
 
-  // Loading States
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Load Dashboard
   const loadDashboard = async () => {
     try {
       let from: string | undefined;
@@ -92,31 +157,28 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
       const data = await ApiClient.getDashboard(from);
       setDashboard(data);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      console.error(err);
     }
   };
 
-  // Load Settings
   const loadSettings = async () => {
     try {
       const data = await ApiClient.getSettings();
       setSettings(data);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      console.error(err);
     }
   };
 
-  // Load Customers
   const loadCustomers = async () => {
     try {
       const data = await ApiClient.getCustomers(customerSearch);
       setCustomers(data.customers);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      console.error(err);
     }
   };
 
-  // Load Customer Detail
   const loadCustomerDetail = async (id: string) => {
     try {
       const data = await ApiClient.getCustomerDetails(id);
@@ -126,7 +188,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Load Offers Audience
   const loadOffersAudience = async () => {
     try {
       const data = await ApiClient.getOfferAudience();
@@ -136,7 +197,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Load Staff
   const loadStaff = async () => {
     try {
       const data = await ApiClient.getStaff();
@@ -146,7 +206,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Load Messages
   const loadMessages = async () => {
     try {
       const data = await ApiClient.getMessages();
@@ -156,7 +215,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Load Audit
   const loadAudit = async () => {
     try {
       const data = await ApiClient.getAuditLog();
@@ -166,20 +224,171 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
+  const loadTemplates = async () => {
+    setLoadingTemplates(true);
+    try {
+      const data = await ApiClient.getMessageTemplates();
+      setTemplates(data.templates);
+      setTemplateConfigs(data.configs);
+
+      const edits: Record<string, { body: string; dlt_template_id: string }> = {};
+      data.templates.forEach((t) => {
+        const key = t.kind;
+        edits[key] = {
+          body: t.body,
+          dlt_template_id: t.dlt_template_id || '',
+        };
+      });
+      setTemplateEdits(edits);
+    } catch (err: any) {
+      console.error('Failed to load templates', err);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const insertPlaceholder = (kind: MessageTemplateKind, ph: string) => {
+    const el = textareaRefs.current[kind];
+    const current = templateEdits[kind]?.body ?? '';
+    const insertion = `{${ph}}`;
+
+    if (!el) {
+      setTemplateEdits((prev) => ({
+        ...prev,
+        [kind]: { ...prev[kind], body: current + insertion },
+      }));
+      return;
+    }
+
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const updated = current.slice(0, start) + insertion + current.slice(end);
+
+    setTemplateEdits((prev) => ({
+      ...prev,
+      [kind]: { ...prev[kind], body: updated },
+    }));
+
+    setTimeout(() => {
+      el.focus();
+      const nextPos = start + insertion.length;
+      el.setSelectionRange(nextPos, nextPos);
+    }, 0);
+  };
+
+  const handleSaveTemplate = async (kind: MessageTemplateKind) => {
+    const edit = templateEdits[kind];
+    if (!edit) return;
+
+    setTemplateStatus((prev) => ({
+      ...prev,
+      [kind]: { saving: true, error: undefined, success: undefined },
+    }));
+
+    try {
+      const res = await ApiClient.updateMessageTemplate({
+        kind,
+        body: edit.body,
+        dlt_template_id: edit.dlt_template_id || null,
+      });
+
+      setTemplates((prev) => prev.map((t) => (t.kind === kind ? res.template : t)));
+      setTemplateStatus((prev) => ({
+        ...prev,
+        [kind]: { saving: false, success: 'Template saved successfully!' },
+      }));
+      setTimeout(() => {
+        setTemplateStatus((prev) => ({
+          ...prev,
+          [kind]: { ...prev[kind], success: undefined },
+        }));
+      }, 4000);
+    } catch (err: any) {
+      setTemplateStatus((prev) => ({
+        ...prev,
+        [kind]: { saving: false, error: err.message },
+      }));
+    }
+  };
+
+  const handleResetTemplate = async (kind: MessageTemplateKind) => {
+    setTemplateStatus((prev) => ({
+      ...prev,
+      [kind]: { saving: true, error: undefined, success: undefined },
+    }));
+
+    try {
+      const res = await ApiClient.resetMessageTemplate({ kind });
+      setTemplates((prev) => prev.map((t) => (t.kind === kind ? res.template : t)));
+      setTemplateEdits((prev) => ({
+        ...prev,
+        [kind]: { body: res.template.body, dlt_template_id: '' },
+      }));
+      setTemplateStatus((prev) => ({
+        ...prev,
+        [kind]: { saving: false, success: 'Reset to built-in default!' },
+      }));
+      setTimeout(() => {
+        setTemplateStatus((prev) => ({
+          ...prev,
+          [kind]: { ...prev[kind], success: undefined },
+        }));
+      }, 4000);
+    } catch (err: any) {
+      setTemplateStatus((prev) => ({
+        ...prev,
+        [kind]: { saving: false, error: err.message },
+      }));
+    }
+  };
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await ApiClient.createStaff({
+        name: newStaffName,
+        username: newStaffUsername,
+        password: newStaffPassword,
+        role: newStaffRole,
+      });
+      setNewStaffName('');
+      setNewStaffUsername('');
+      loadStaff();
+      alert('New staff member added!');
+    } catch (err: any) {
+      alert(`Error creating staff: ${err.message}`);
+    }
+  };
+
+  const handleRetryMessage = async (id: string) => {
+    setRetryingId(id);
+    try {
+      await ApiClient.retryMessage(id);
+      loadMessages();
+    } catch (err: any) {
+      alert(`Retry failed: ${err.message}`);
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   useEffect(() => {
     if (subTab === 'dashboard') loadDashboard();
     if (subTab === 'settings') loadSettings();
     if (subTab === 'customers') loadCustomers();
     if (subTab === 'offers') loadOffersAudience();
     if (subTab === 'staff') loadStaff();
-    if (subTab === 'messages') loadMessages();
+    if (subTab === 'messages') {
+      if (messagesSubTab === 'log') loadMessages();
+      if (messagesSubTab === 'templates') loadTemplates();
+    }
     if (subTab === 'audit') loadAudit();
-  }, [subTab, dateFilter]);
+  }, [subTab, messagesSubTab, dateFilter]);
 
-  // Handle Settings Save
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!settings) return;
+
     setSavingSettings(true);
     setSettingsSuccess(false);
     try {
@@ -194,37 +403,31 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Calculate live preview in settings
   const calculateLiveExample = () => {
     if (!settings) return '';
-    const bill = 1000;
-    let bDisc = 0;
-    if (settings.b_discount_type === 'percent') {
-      bDisc = Math.round((bill * settings.b_discount_value) / 100);
-      if (settings.b_discount_cap) {
-        bDisc = Math.min(bDisc, settings.b_discount_cap);
+    const emmaReturn = settings.a_return_type === 'percent'
+      ? Math.round((60 * settings.a_return_value) / 100 * 100) / 100
+      : settings.a_return_value;
+
+    let sophieCredit = 0;
+    if (settings.b_credit_type === 'percent') {
+      sophieCredit = Math.round((60 * settings.b_credit_value) / 100 * 100) / 100;
+      if (settings.b_credit_cap) {
+        sophieCredit = Math.min(sophieCredit, settings.b_credit_cap);
       }
     } else {
-      bDisc = Math.min(settings.b_discount_value, bill);
+      sophieCredit = Math.min(settings.b_credit_value, 60);
     }
 
-    let aCred = 0;
-    if (settings.a_credit_type === 'percent') {
-      aCred = Math.round((bill * settings.a_credit_value) / 100);
-    } else {
-      aCred = settings.a_credit_value;
-    }
-
-    return `If a friend spends ₹1,000: friend gets ₹${bDisc} off, referrer gets ₹${aCred} credit.`;
+    return `If Emma spends £60 and her friend Sophie spends £60: Emma gets £${emmaReturn.toFixed(2)} back, Sophie gets £${sophieCredit.toFixed(2)} store credit.`;
   };
 
-  // Trigger Daily Job
   const handleRunDailyJob = async () => {
     setDailyJobRunning(true);
     setDailyJobMessage(null);
     try {
       const res = await ApiClient.runDailyJob();
-      setDailyJobMessage(`Daily job finished: ${res.activated} credit lots activated, ${res.expired} expired, ${res.remindersSent} reminders sent.`);
+      setDailyJobMessage(`Daily job finished: ${res.expired} expired, ${res.remindersSent} reminders sent.`);
       loadDashboard();
     } catch (err: any) {
       alert(`Job failed: ${err.message}`);
@@ -233,7 +436,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Manual Credit Adjustment
   const handleCreditAdjustment = async () => {
     if (!selectedCustomerId || !adjAmount || !adjReason.trim()) {
       alert('Please enter amount and reason');
@@ -254,9 +456,8 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Delete / Anonymize Customer
   const handleDeleteCustomer = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete customer "${name}" upon their request? In compliance with privacy regulations, their personal name and phone number will be permanently erased while maintaining anonymized sales audit records.`)) {
+    if (!confirm(`Are you sure you want to delete customer "${name}"? Personal details will be anonymized.`)) {
       return;
     }
     try {
@@ -270,7 +471,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Send Offer Broadcast
   const handleSendOffer = async () => {
     if (!offerText.trim()) return;
     if (!confirm(`Broadcast this offer to ${audienceCount} opted-in customers?`)) return;
@@ -286,51 +486,8 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
     }
   };
 
-  // Create Staff
-  const handleCreateStaff = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await ApiClient.createStaff({
-        name: newStaffName,
-        username: newStaffUsername,
-        password: newStaffPassword,
-        role: newStaffRole,
-      });
-      setNewStaffName('');
-      setNewStaffUsername('');
-      loadStaff();
-      alert('New staff member added!');
-    } catch (err: any) {
-      alert(`Error creating staff: ${err.message}`);
-    }
-  };
-
-  // Toggle Staff Active
-  const handleToggleStaff = async (id: string, currentActive: boolean) => {
-    try {
-      await ApiClient.updateStaff(id, { active: !currentActive });
-      loadStaff();
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    }
-  };
-
-  // Retry message
-  const handleRetryMessage = async (id: string) => {
-    setRetryingId(id);
-    try {
-      await ApiClient.retryMessage(id);
-      loadMessages();
-    } catch (err: any) {
-      alert(`Retry failed: ${err.message}`);
-    } finally {
-      setRetryingId(null);
-    }
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <div className="flex items-center gap-2">
@@ -344,7 +501,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
           </p>
         </div>
 
-        {/* Sub Navigation */}
         <div className="flex flex-wrap gap-1 bg-neutral-200/80 p-1 rounded-xl">
           <button
             onClick={() => setSubTab('dashboard')}
@@ -412,10 +568,8 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
         </div>
       </div>
 
-      {/* SUB-VIEW 1: DASHBOARD */}
       {subTab === 'dashboard' && dashboard && (
         <div className="space-y-6">
-          {/* Filter Bar & Daily Job trigger */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-neutral-200 shadow-xs">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-neutral-500 uppercase">Period:</span>
@@ -440,7 +594,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
               className="py-1.5 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-rose-950 font-black text-xs shadow-xs transition flex items-center gap-1.5 self-start sm:self-auto"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${dailyJobRunning ? 'animate-spin' : ''}`} />
-              <span>{dailyJobRunning ? 'Executing 09:00 IST Job...' : 'Run 09:00 IST Daily Job Now'}</span>
+              <span>{dailyJobRunning ? 'Executing 09:00 Job...' : 'Run 09:00 UK Daily Job Now'}</span>
             </button>
           </div>
 
@@ -451,7 +605,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             </div>
           )}
 
-          {/* Metric Cards Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
               <span className="text-xs font-semibold text-neutral-500 uppercase">Total Customers</span>
@@ -472,85 +625,53 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs bg-emerald-50/40">
-              <span className="text-xs font-semibold text-emerald-800 uppercase">Referred Sales (₹)</span>
-              <div className="text-2xl font-black text-emerald-900 mt-1">₹{dashboard.salesFromReferredCustomersRupees}</div>
+              <span className="text-xs font-semibold text-emerald-800 uppercase">Referred Sales (£)</span>
+              <div className="text-2xl font-black text-emerald-900 mt-1">£{dashboard.salesFromReferredCustomersPounds.toFixed(2)}</div>
               <span className="text-[11px] text-emerald-700 font-medium">New customer revenue</span>
             </div>
           </div>
 
-          {/* Credit Flow Summary */}
           <div className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-xs">
             <h3 className="text-sm font-bold text-rose-950 uppercase tracking-wider mb-4 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-500" />
               <span>Store Credit Financial Ledger</span>
             </h3>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
               <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
-                <span className="text-[11px] font-bold text-amber-800 block">Total Issued</span>
-                <span className="text-xl font-black text-amber-950 mt-0.5 block">₹{dashboard.creditIssuedRupees}</span>
+                <span className="text-[11px] font-bold text-amber-800 block">Returns Paid to Referrers</span>
+                <span className="text-xl font-black text-amber-950 mt-0.5 block">£{dashboard.returnsPaidPounds.toFixed(2)}</span>
                 <span className="text-[10px] text-neutral-500">Gross earned by referrers</span>
+              </div>
+
+              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200">
+                <span className="text-[11px] font-bold text-indigo-800 block">Credit Given to Friends</span>
+                <span className="text-xl font-black text-indigo-950 mt-0.5 block">£{dashboard.friendCreditGivenPounds.toFixed(2)}</span>
+                <span className="text-[10px] text-neutral-500">Store credit for next visit</span>
               </div>
 
               <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
                 <span className="text-[11px] font-bold text-emerald-800 block">Redeemed</span>
-                <span className="text-xl font-black text-emerald-950 mt-0.5 block">₹{dashboard.creditRedeemedRupees}</span>
+                <span className="text-xl font-black text-emerald-950 mt-0.5 block">£{dashboard.creditRedeemedPounds.toFixed(2)}</span>
                 <span className="text-[10px] text-neutral-500">Spent on repeat visits</span>
               </div>
 
               <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200">
                 <span className="text-[11px] font-bold text-blue-800 block">Outstanding</span>
-                <span className="text-xl font-black text-blue-950 mt-0.5 block">₹{dashboard.creditOutstandingRupees}</span>
+                <span className="text-xl font-black text-blue-950 mt-0.5 block">£{dashboard.creditOutstandingPounds.toFixed(2)}</span>
                 <span className="text-[10px] text-neutral-500">Active waiting in wallets</span>
               </div>
 
               <div className="p-3 bg-neutral-100 rounded-xl border border-neutral-200">
                 <span className="text-[11px] font-bold text-neutral-600 block">Expired</span>
-                <span className="text-xl font-black text-neutral-800 mt-0.5 block">₹{dashboard.creditExpiredRupees}</span>
+                <span className="text-xl font-black text-neutral-800 mt-0.5 block">£{dashboard.creditExpiredPounds.toFixed(2)}</span>
                 <span className="text-[10px] text-neutral-500">Passed expiry cutoff</span>
               </div>
             </div>
           </div>
-
-          {/* Top 10 Referrers Table */}
-          <div className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-xs">
-            <h3 className="text-sm font-bold text-rose-950 uppercase tracking-wider mb-3">
-              Top Referring Brand Ambassadors
-            </h3>
-
-            {dashboard.topReferrers.length === 0 ? (
-              <p className="text-xs text-neutral-400">No referrals completed yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-neutral-50 text-neutral-500 font-bold uppercase border-b border-neutral-200">
-                    <tr>
-                      <th className="py-2.5 px-3">Rank</th>
-                      <th className="py-2.5 px-3">Customer</th>
-                      <th className="py-2.5 px-3">Mobile</th>
-                      <th className="py-2.5 px-3 text-right">Friends Referred</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {dashboard.topReferrers.map((ref, idx) => (
-                      <tr key={ref.customerId} className="hover:bg-neutral-50/80">
-                        <td className="py-2.5 px-3 font-bold text-amber-700">#{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-bold text-neutral-900">{ref.name}</td>
-                        <td className="py-2.5 px-3 text-neutral-600">{ref.phone}</td>
-                        <td className="py-2.5 px-3 text-right font-black text-rose-950">
-                          {ref.referralsCount}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* SUB-VIEW 2: SETTINGS (Full Section 5 Specs with Live Example) */}
       {subTab === 'settings' && settings && (
         <form onSubmit={handleSaveSettings} className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5 sm:p-7 space-y-6">
           <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
@@ -566,7 +687,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             )}
           </div>
 
-          {/* Scheme Switch */}
           <div className="flex items-center justify-between p-4 bg-rose-50/60 rounded-xl border border-rose-200">
             <div>
               <div className="text-sm font-bold text-rose-950">Referral Scheme Status</div>
@@ -583,36 +703,35 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             </label>
           </div>
 
-          {/* REWARD SETTINGS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Friend B's Discount */}
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-3">
               <h3 className="text-xs font-black uppercase tracking-wider text-rose-900">
-                Friend (Customer B) First-Purchase Discount
+                Return to referrer (% of their own first purchase, or fixed £)
               </h3>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Discount Type</label>
+                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Return Type</label>
                   <select
-                    value={settings.b_discount_type}
-                    onChange={(e) => setSettings({ ...settings, b_discount_type: e.target.value as any })}
+                    value={settings.a_return_type}
+                    onChange={(e) => setSettings({ ...settings, a_return_type: e.target.value as any })}
                     className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
                   >
                     <option value="percent">Percentage (%)</option>
-                    <option value="fixed">Fixed Rupees (₹)</option>
+                    <option value="fixed">Fixed Pounds (£)</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                    Value {settings.b_discount_type === 'percent' ? '(%)' : '(₹)'}
+                    Value {settings.a_return_type === 'percent' ? '(%)' : '(£)'}
                   </label>
                   <input
                     type="number"
                     min="1"
-                    value={settings.b_discount_value}
-                    onChange={(e) => setSettings({ ...settings, b_discount_value: parseFloat(e.target.value) || 0 })}
+                    max={settings.a_return_type === 'percent' ? 100 : undefined}
+                    value={settings.a_return_value}
+                    onChange={(e) => setSettings({ ...settings, a_return_value: parseFloat(e.target.value) || 0 })}
                     className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
                   />
                 </div>
@@ -620,63 +739,11 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
 
               <div>
                 <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                  Discount Cap in Rupees (Optional, empty for no cap)
+                  Min Bill To Qualify For Referral (£, empty for none)
                 </label>
                 <input
                   type="number"
-                  placeholder="e.g. 500"
-                  value={settings.b_discount_cap ?? ''}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      b_discount_cap: e.target.value ? parseFloat(e.target.value) : null,
-                    })
-                  }
-                  className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Referrer A's Credit */}
-            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-amber-900">
-                Referrer (Customer A) Store Credit Reward
-              </h3>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Credit Type</label>
-                  <select
-                    value={settings.a_credit_type}
-                    onChange={(e) => setSettings({ ...settings, a_credit_type: e.target.value as any })}
-                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                  >
-                    <option value="percent">Percentage (%)</option>
-                    <option value="fixed">Fixed Rupees (₹)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                    Value {settings.a_credit_type === 'percent' ? '(%)' : '(₹)'}
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={settings.a_credit_value}
-                    onChange={(e) => setSettings({ ...settings, a_credit_value: parseFloat(e.target.value) || 0 })}
-                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                  Min Bill To Qualify For Referral (₹, empty for none)
-                </label>
-                <input
-                  type="number"
-                  placeholder="e.g. 500"
+                  placeholder="e.g. 20"
                   value={settings.min_bill_for_referral ?? ''}
                   onChange={(e) =>
                     setSettings({
@@ -688,9 +755,60 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
                 />
               </div>
             </div>
+
+            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-amber-900">
+                Friend's store credit
+              </h3>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Credit Type</label>
+                  <select
+                    value={settings.b_credit_type}
+                    onChange={(e) => setSettings({ ...settings, b_credit_type: e.target.value as any })}
+                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                  >
+                    <option value="percent">Percentage (%)</option>
+                    <option value="fixed">Fixed Pounds (£)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
+                    Value {settings.b_credit_type === 'percent' ? '(%)' : '(£)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={settings.b_credit_type === 'percent' ? 100 : undefined}
+                    value={settings.b_credit_value}
+                    onChange={(e) => setSettings({ ...settings, b_credit_value: parseFloat(e.target.value) || 0 })}
+                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
+                  Credit Cap in Pounds (Optional, empty for no cap)
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 50"
+                  value={settings.b_credit_cap ?? ''}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      b_credit_cap: e.target.value ? parseFloat(e.target.value) : null,
+                    })
+                  }
+                  className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                />
+              </div>
+            </div>
           </div>
 
-          {/* REQUIRED SECTION 5 LIVE EXAMPLE BANNER */}
           <div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-300 text-amber-950 flex items-center gap-3">
             <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
             <div>
@@ -703,23 +821,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             </div>
           </div>
 
-          {/* LIFECYCLE & LIMITS */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                Pending Days (0–60)
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="60"
-                value={settings.pending_days}
-                onChange={(e) => setSettings({ ...settings, pending_days: parseInt(e.target.value) || 0 })}
-                className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-              />
-              <span className="text-[10px] text-neutral-400">Return guarantee period</span>
-            </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
                 Expiry Days (7–365)
@@ -732,7 +834,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
                 onChange={(e) => setSettings({ ...settings, expiry_days: parseInt(e.target.value) || 90 })}
                 className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
               />
-              <span className="text-[10px] text-neutral-400">Active credit validity</span>
             </div>
 
             <div>
@@ -747,7 +848,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
                 onChange={(e) => setSettings({ ...settings, reminder_days_before: parseInt(e.target.value) || 0 })}
                 className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
               />
-              <span className="text-[10px] text-neutral-400">Days before expiry</span>
             </div>
 
             <div>
@@ -762,34 +862,17 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
                 onChange={(e) => setSettings({ ...settings, max_credit_share: parseInt(e.target.value) || 50 })}
                 className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
               />
-              <span className="text-[10px] text-neutral-400">Cap per bill (default 50%)</span>
             </div>
           </div>
 
-          {/* SHOP DETAILS & LANGUAGE */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Shop Name</label>
-              <input
-                type="text"
-                value={settings.shop_name}
-                onChange={(e) => setSettings({ ...settings, shop_name: e.target.value })}
-                className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Message Language</label>
-              <select
-                value={settings.message_language}
-                onChange={(e) => setSettings({ ...settings, message_language: e.target.value as any })}
-                className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-              >
-                <option value="English">English</option>
-                <option value="Hindi">Hindi</option>
-                <option value="both">Both (English + Hindi)</option>
-              </select>
-            </div>
+          <div>
+            <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Shop Name</label>
+            <input
+              type="text"
+              value={settings.shop_name}
+              onChange={(e) => setSettings({ ...settings, shop_name: e.target.value })}
+              className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+            />
           </div>
 
           <div className="pt-2 flex justify-end">
@@ -804,7 +887,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
         </form>
       )}
 
-      {/* SUB-VIEW 3: CUSTOMERS & LEDGER */}
       {subTab === 'customers' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-neutral-200 shadow-xs">
@@ -829,7 +911,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
               </button>
               <a
                 href="/api/owner/export-csv"
-                download="raigarh-customers.csv"
+                download="reffrnd-customers.csv"
                 className="px-3 py-2 bg-rose-900 hover:bg-rose-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -838,181 +920,117 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             </div>
           </div>
 
-          {/* Customers Table */}
-          <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-neutral-50 text-neutral-500 font-bold uppercase border-b border-neutral-200">
-                  <tr>
-                    <th className="py-3 px-4">Customer Name</th>
-                    <th className="py-3 px-4">Mobile</th>
-                    <th className="py-3 px-4">Active Credit</th>
-                    <th className="py-3 px-4">Pending</th>
-                    <th className="py-3 px-4">Referral Code</th>
-                    <th className="py-3 px-4">Offers Consent</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-neutral-50 text-neutral-500 font-bold uppercase border-b border-neutral-200">
+                <tr>
+                  <th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4">Mobile</th>
+                  <th className="py-3 px-4">Active Credit</th>
+                  <th className="py-3 px-4">Referral Code</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {customers.map((c) => (
+                  <tr key={c.id} className="hover:bg-neutral-50/80">
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-neutral-900">{c.name}</div>
+                      <div className="text-[10px] text-neutral-400">Joined {new Date(c.joinedDate).toLocaleDateString('en-GB')}</div>
+                    </td>
+                    <td className="py-3 px-4 font-mono text-neutral-600">{c.phone}</td>
+                    <td className="py-3 px-4 font-bold text-emerald-800">£{c.activeCreditPounds.toFixed(2)}</td>
+                    <td className="py-3 px-4">
+                      <span className="font-mono font-bold bg-neutral-100 px-2 py-0.5 rounded text-neutral-800">
+                        {c.referralCode}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right space-x-2">
+                      <button
+                        onClick={() => {
+                          setSelectedCustomerId(c.id);
+                          loadCustomerDetail(c.id);
+                        }}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-900 rounded-lg font-bold text-xs"
+                      >
+                        Ledger
+                      </button>
+                      <button
+                        onClick={() => onViewCustomerPortal(c.personalToken)}
+                        className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg font-bold text-xs"
+                      >
+                        Pass
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {customers.map((c) => (
-                    <tr key={c.id} className="hover:bg-neutral-50/80">
-                      <td className="py-3 px-4 font-bold text-neutral-900">{c.name}</td>
-                      <td className="py-3 px-4 text-neutral-600 font-mono">{c.phone}</td>
-                      <td className="py-3 px-4 font-black text-amber-900">₹{c.activeCreditRupees}</td>
-                      <td className="py-3 px-4 text-neutral-500">₹{c.pendingCreditRupees}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-rose-900">
-                        {c.referralCode}{' '}
-                        {c.referralCodeUsed && (
-                          <span className="text-[10px] text-neutral-400 font-sans font-normal">(Used)</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            c.marketingConsent ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-500'
-                          }`}
-                        >
-                          {c.marketingConsent ? 'Yes' : 'No'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right space-x-2">
-                        <button
-                          onClick={() => {
-                            setSelectedCustomerId(c.id);
-                            loadCustomerDetail(c.id);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-900 hover:bg-rose-100 font-bold text-[11px]"
-                        >
-                          Ledger
-                        </button>
-                        <button
-                          onClick={() => onViewCustomerPortal(c.personalToken)}
-                          className="px-2.5 py-1 rounded-lg border text-neutral-700 hover:bg-neutral-50 text-[11px]"
-                        >
-                          Pass
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
 
-          {/* CUSTOMER DETAIL MODAL / DRAWER */}
-          {selectedCustomerDetail && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-              <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-neutral-200 space-y-5">
-                <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+          {selectedCustomerId && selectedCustomerDetail && (
+            <div className="bg-white rounded-2xl border-2 border-rose-900 shadow-xl p-6 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+                <div>
+                  <h3 className="text-lg font-black text-rose-950">
+                    {selectedCustomerDetail.customer.name} Ledger
+                  </h3>
+                  <p className="text-xs text-neutral-500 font-mono">
+                    {selectedCustomerDetail.customer.phone} · Token: {selectedCustomerDetail.customer.personal_token}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedCustomerId(null);
+                    setSelectedCustomerDetail(null);
+                  }}
+                  className="text-xs font-bold text-neutral-500 hover:text-neutral-800"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-900">Manual Credit Adjustment (£)</h4>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={adjAmount}
+                      onChange={(e) => setAdjAmount(e.target.value)}
+                      placeholder="e.g. 10 or -5"
+                      className="w-28 p-2 rounded-lg border border-neutral-300 text-xs font-bold"
+                    />
+                    <input
+                      type="text"
+                      value={adjReason}
+                      onChange={(e) => setAdjReason(e.target.value)}
+                      placeholder="Reason (required)"
+                      className="flex-1 p-2 rounded-lg border border-neutral-300 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreditAdjustment}
+                      disabled={adjLoading}
+                      className="px-4 py-2 bg-rose-900 hover:bg-rose-800 text-white rounded-lg text-xs font-bold"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-red-50/60 rounded-xl border border-red-200 flex flex-col justify-between">
                   <div>
-                    <h3 className="text-xl font-black text-rose-950">
-                      {selectedCustomerDetail.customer.name}
-                    </h3>
-                    <p className="text-xs text-neutral-500">
-                      {selectedCustomerDetail.customer.phone} · Joined {new Date(selectedCustomerDetail.customer.created_at).toLocaleDateString('en-IN')}
-                    </p>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-red-900">Privacy / Delete Request</h4>
+                    <p className="text-xs text-red-700 mt-1">Anonymizes personal details while preserving ledger compliance.</p>
                   </div>
-                  <button
-                    onClick={() => setSelectedCustomerDetail(null)}
-                    className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Manual Credit Adjustment */}
-                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 space-y-3">
-                  <h4 className="text-xs font-black uppercase text-amber-950 tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Manual Credit Adjustment</span>
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <input
-                        type="number"
-                        placeholder="Amount in ₹ (+50 or -50)"
-                        value={adjAmount}
-                        onChange={(e) => setAdjAmount(e.target.value)}
-                        className="w-full p-2 bg-white rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Required Reason (e.g. Return compensation)"
-                        value={adjReason}
-                        onChange={(e) => setAdjReason(e.target.value)}
-                        className="w-full p-2 bg-white rounded-lg border border-neutral-300 text-xs font-medium outline-none"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCreditAdjustment}
-                    disabled={adjLoading}
-                    className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition"
-                  >
-                    {adjLoading ? 'Adjusting...' : 'Apply Credit Adjustment (+/-)'}
-                  </button>
-                </div>
-
-                {/* Sales History */}
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-700 uppercase mb-2">Purchase History</h4>
-                  {selectedCustomerDetail.sales.length === 0 ? (
-                    <p className="text-xs text-neutral-400">No purchases recorded.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {selectedCustomerDetail.sales.map((s: any) => (
-                        <div key={s.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs flex items-center justify-between">
-                          <div>
-                            <span className="font-mono font-bold text-neutral-900">{s.tally_bill_no}</span>
-                            <span className="text-neutral-500 ml-2">
-                              {new Date(s.created_at).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          <div className="font-semibold text-neutral-800">
-                            Bill: ₹{s.billAmountRupees} | Discount: ₹{s.discountAmountRupees} | Credit Used: ₹{s.creditUsedRupees}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Credit Ledger History */}
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-700 uppercase mb-2">Store Credit Ledger Lots</h4>
-                  <div className="space-y-2">
-                    {selectedCustomerDetail.credits.map((cr: any) => (
-                      <div key={cr.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs flex items-center justify-between">
-                        <div>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase mr-2 ${
-                            cr.status === 'active' ? 'bg-emerald-100 text-emerald-800' : cr.status === 'pending' ? 'bg-blue-100 text-blue-800' : 'bg-neutral-200 text-neutral-600'
-                          }`}>
-                            {cr.status}
-                          </span>
-                          <span className="font-bold text-neutral-800">₹{cr.remainingRupees} / ₹{cr.amountRupees}</span>
-                          {cr.reason && <span className="text-neutral-500 ml-2">({cr.reason})</span>}
-                        </div>
-                        <span className="text-[11px] text-neutral-400">
-                          {cr.expires_at ? `Expires ${new Date(cr.expires_at).toLocaleDateString('en-IN')}` : `Unlocks ${new Date(cr.available_at).toLocaleDateString('en-IN')}`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Section 9 Privacy Delete Button */}
-                <div className="pt-4 border-t border-neutral-200 flex justify-between items-center">
-                  <span className="text-[11px] text-neutral-400">Section 9 GDPR / DPDP Privacy Compliance</span>
                   <button
                     type="button"
                     onClick={() => handleDeleteCustomer(selectedCustomerDetail.customer.id, selectedCustomerDetail.customer.name)}
-                    className="py-1.5 px-3 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold flex items-center gap-1.5"
+                    className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold w-fit"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Customer on Request</span>
+                    Anonymize Customer
                   </button>
                 </div>
               </div>
@@ -1021,113 +1039,117 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
         </div>
       )}
 
-      {/* SUB-VIEW 4: SEND OFFER */}
       {subTab === 'offers' && (
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 max-w-2xl space-y-4">
-          <h2 className="text-lg font-black text-rose-950">Send Promotional Broadcast</h2>
-          <p className="text-xs text-neutral-500">
-            Send an SMS/WhatsApp announcement. Only customers who opted in and have not opted out will receive it.
-          </p>
-
-          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 font-bold flex items-center gap-2">
-            <Users className="w-4 h-4 text-emerald-700 shrink-0" />
-            <span>Audience Target: {audienceCount} opted-in customers</span>
+        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 max-w-2xl mx-auto space-y-5">
+          <div>
+            <h2 className="text-lg font-black text-rose-950">Broadcast Marketing Offer</h2>
+            <p className="text-xs text-neutral-500">
+              Only sends to customers who have given offers consent (currently <strong>{audienceCount}</strong> eligible customers).
+            </p>
           </div>
 
-          {offerSuccessMsg && (
-            <div className="p-3 bg-emerald-100 border border-emerald-300 rounded-xl text-xs text-emerald-900 font-bold">
-              {offerSuccessMsg}
-            </div>
-          )}
-
           <div>
-            <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">Offer Text</label>
+            <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">Offer Message Text</label>
             <textarea
               rows={4}
               value={offerText}
               onChange={(e) => setOfferText(e.target.value)}
-              className="w-full p-3 rounded-xl border border-neutral-300 text-sm font-medium outline-none focus:border-rose-600"
-              placeholder="Write your shop offer here..."
+              className="w-full p-3 rounded-xl border border-neutral-300 text-sm outline-none"
             />
-            <span className="text-[11px] text-neutral-400">
-              Note: Unsubscribe link ("Reply STOP or use &lt;link&gt; to stop offers") will be appended automatically per compliance.
+            <span className="text-[11px] text-neutral-400 mt-1 block">
+              Note: The automated offer footer with opt-out link is appended to every message automatically.
             </span>
           </div>
 
-          <div className="pt-2">
+          {offerSuccessMsg && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{offerSuccessMsg}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end">
             <button
+              type="button"
               onClick={handleSendOffer}
-              disabled={sendingOffer || audienceCount === 0 || !offerText.trim()}
-              className="py-3 px-6 rounded-xl bg-rose-900 hover:bg-rose-800 text-white font-bold text-xs shadow-md transition disabled:opacity-40 flex items-center gap-2"
+              disabled={sendingOffer || audienceCount === 0}
+              className="py-3 px-6 rounded-xl bg-rose-900 hover:bg-rose-800 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
             >
-              <Send className="w-4 h-4" />
-              <span>{sendingOffer ? 'Broadcasting...' : `Confirm & Broadcast to ${audienceCount} Shoppers`}</span>
+              {sendingOffer ? 'Broadcasting...' : `Send Offer to ${audienceCount} Customers`}
             </button>
           </div>
         </div>
       )}
 
-      {/* SUB-VIEW 5: STAFF */}
       {subTab === 'staff' && (
-        <div className="space-y-6 max-w-3xl">
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5">
-            <h2 className="text-base font-black text-rose-950 mb-3">Add Cashier / Staff Account</h2>
-            <form onSubmit={handleCreateStaff} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <input
-                type="text"
-                placeholder="Full Name"
-                required
-                value={newStaffName}
-                onChange={(e) => setNewStaffName(e.target.value)}
-                className="p-2.5 rounded-xl border border-neutral-300 text-xs font-medium outline-none"
-              />
-              <input
-                type="text"
-                placeholder="Username"
-                required
-                value={newStaffUsername}
-                onChange={(e) => setNewStaffUsername(e.target.value)}
-                className="p-2.5 rounded-xl border border-neutral-300 text-xs font-medium outline-none"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                required
-                value={newStaffPassword}
-                onChange={(e) => setNewStaffPassword(e.target.value)}
-                className="p-2.5 rounded-xl border border-neutral-300 text-xs font-medium outline-none"
-              />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5 space-y-4">
+            <h2 className="text-base font-black text-rose-950">Add Staff Account</h2>
+            <form onSubmit={handleCreateStaff} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  required
+                  className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Username</label>
+                <input
+                  type="text"
+                  value={newStaffUsername}
+                  onChange={(e) => setNewStaffUsername(e.target.value)}
+                  placeholder="e.g. cashier2"
+                  required
+                  className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Password</label>
+                <input
+                  type="text"
+                  value={newStaffPassword}
+                  onChange={(e) => setNewStaffPassword(e.target.value)}
+                  required
+                  className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Role</label>
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as any)}
+                  className="w-full p-2.5 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+                >
+                  <option value="cashier">Cashier</option>
+                  <option value="owner">Owner</option>
+                </select>
+              </div>
               <button
                 type="submit"
-                className="py-2.5 px-4 bg-rose-900 text-white rounded-xl text-xs font-bold hover:bg-rose-800"
+                className="w-full py-2.5 bg-rose-900 hover:bg-rose-800 text-white rounded-xl text-xs font-bold transition"
               >
-                Create Account
+                Create Staff Account
               </button>
             </form>
           </div>
 
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5">
-            <h2 className="text-base font-black text-rose-950 mb-3">Existing Staff Accounts</h2>
+          <div className="md:col-span-2 bg-white rounded-2xl border border-neutral-200 shadow-xs p-5">
+            <h2 className="text-base font-black text-rose-950 mb-4">Active Staff Accounts</h2>
             <div className="space-y-2">
               {staffList.map((st) => (
-                <div key={st.id} className="p-3 rounded-xl border border-neutral-200 bg-neutral-50 flex items-center justify-between text-xs">
+                <div key={st.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between">
                   <div>
-                    <span className="font-bold text-neutral-900">{st.name}</span>
-                    <span className="text-neutral-500 ml-2 font-mono">(@{st.username})</span>
-                    <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900">
-                      {st.role}
-                    </span>
+                    <div className="font-bold text-neutral-900 text-sm">{st.name}</div>
+                    <div className="text-xs text-neutral-500 font-mono">Username: {st.username} · Role: {st.role}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleStaff(st.id, st.active)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                        st.active ? 'bg-emerald-100 text-emerald-800 hover:bg-red-100 hover:text-red-800' : 'bg-red-100 text-red-800 hover:bg-emerald-100 hover:text-emerald-800'
-                      }`}
-                    >
-                      {st.active ? 'Active' : 'Disabled'}
-                    </button>
-                  </div>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${st.active ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                    {st.active ? 'Active' : 'Deactivated'}
+                  </span>
                 </div>
               ))}
             </div>
@@ -1135,81 +1157,195 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
         </div>
       )}
 
-      {/* SUB-VIEW 6: MESSAGES */}
       {subTab === 'messages' && (
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base font-black text-rose-950">Transactional & Promo Messages Log</h2>
-              <p className="text-xs text-neutral-500">Live feed of all customer SMS and WhatsApp notifications.</p>
-            </div>
+        <div className="space-y-4">
+          <div className="flex bg-neutral-200/80 p-1 rounded-xl w-fit">
             <button
-              onClick={loadMessages}
-              className="p-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700"
+              onClick={() => setMessagesSubTab('log')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                messagesSubTab === 'log' ? 'bg-white text-rose-950 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+              }`}
             >
-              <RefreshCw className="w-4 h-4" />
+              Message log
+            </button>
+            <button
+              onClick={() => setMessagesSubTab('templates')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                messagesSubTab === 'templates' ? 'bg-white text-rose-950 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              Templates
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-neutral-50 text-neutral-500 font-bold uppercase border-b border-neutral-200">
-                <tr>
-                  <th className="py-2.5 px-3">Kind</th>
-                  <th className="py-2.5 px-3">Channel</th>
-                  <th className="py-2.5 px-3">Message Content</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Sent Time</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 font-mono text-[11px]">
+          {messagesSubTab === 'log' && (
+            <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5">
+              <h2 className="text-base font-black text-rose-950 mb-4">Recent Dispatched Messages</h2>
+              <div className="space-y-2">
                 {messages.map((m) => (
-                  <tr key={m.id} className="hover:bg-neutral-50">
-                    <td className="py-2.5 px-3 font-bold uppercase text-rose-900">{m.kind}</td>
-                    <td className="py-2.5 px-3 uppercase text-neutral-600">{m.channel}</td>
-                    <td className="py-2.5 px-3 font-sans text-neutral-800 max-w-xs truncate">{m.body}</td>
-                    <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        m.status === 'sent' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {m.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-neutral-500">
-                      {m.sent_at ? new Date(m.sent_at).toLocaleTimeString('en-IN') : '-'}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
+                  <div key={m.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-rose-900 uppercase text-[10px]">
+                        Kind: {m.kind} · Channel: {m.channel} · {new Date(m.created_at).toLocaleString('en-GB')}
+                      </div>
+                      <div className="font-mono text-neutral-800 mt-1">"{m.body}"</div>
+                    </div>
+                    {m.status === 'failed' && (
                       <button
                         onClick={() => handleRetryMessage(m.id)}
                         disabled={retryingId === m.id}
-                        className="px-2 py-0.5 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-[10px]"
+                        className="px-3 py-1 bg-amber-500 text-rose-950 rounded-lg font-bold text-xs self-start"
                       >
-                        {retryingId === m.id ? 'Retrying...' : 'Retry'}
+                        Retry
                       </button>
-                    </td>
-                  </tr>
+                    )}
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          )}
+
+          {messagesSubTab === 'templates' && (
+            <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5 sm:p-7 space-y-6">
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 font-medium">
+                "When real SMS is switched on, every template here must match your DLT-approved template ID to prevent carrier rejection."
+              </div>
+
+              {loadingTemplates ? (
+                <div className="p-12 text-center text-neutral-400">Loading templates...</div>
+              ) : (
+                <div className="space-y-8">
+                  {TEMPLATE_KINDS_ORDER.map((kind) => {
+                    const meta = TEMPLATE_META[kind];
+                    const config = templateConfigs[kind];
+                    const edit = templateEdits[kind] || { body: '', dlt_template_id: '' };
+                    const status = templateStatus[kind] || {};
+                    const preview = renderPreviewText(edit.body);
+                    const charCount = preview.length;
+
+                    return (
+                      <div key={kind} className="p-5 rounded-2xl border border-neutral-200 bg-neutral-50/40 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs font-bold text-rose-900 uppercase">
+                              #{meta.number} · {meta.title}
+                            </div>
+                            <div className="text-xs text-neutral-600 mt-0.5">{meta.note}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleResetTemplate(kind)}
+                            className="px-3 py-1.5 rounded-lg bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold flex items-center gap-1"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reset to default</span>
+                          </button>
+                        </div>
+
+                        <div>
+                          <div className="text-[11px] font-bold text-neutral-500 uppercase mb-1.5">
+                            Allowed Placeholders (tap to insert):
+                          </div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {config?.supportedPlaceholders.map((ph) => (
+                              <button
+                                key={ph}
+                                type="button"
+                                onClick={() => insertPlaceholder(kind, ph)}
+                                className="px-2.5 py-1 rounded-lg bg-white border border-neutral-300 hover:border-rose-600 text-rose-950 text-xs font-mono font-bold shadow-xs transition"
+                              >
+                                {'{'}{ph}{'}'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-neutral-700 uppercase mb-1">
+                            English Template Body
+                          </label>
+                          <textarea
+                            ref={(el) => {
+                              textareaRefs.current[kind] = el;
+                            }}
+                            rows={3}
+                            value={edit.body}
+                            onChange={(e) =>
+                              setTemplateEdits((prev) => ({
+                                ...prev,
+                                [kind]: { ...prev[kind], body: e.target.value },
+                              }))
+                            }
+                            className="w-full p-3 rounded-xl border border-neutral-300 font-mono text-xs outline-none focus:border-rose-600 bg-white"
+                          />
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-neutral-200">
+                          <div className="w-full sm:w-64">
+                            <label className="block text-[10px] font-bold text-neutral-500 uppercase mb-0.5">
+                              DLT Template ID (optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={edit.dlt_template_id}
+                              onChange={(e) =>
+                                setTemplateEdits((prev) => ({
+                                  ...prev,
+                                  [kind]: { ...prev[kind], dlt_template_id: e.target.value },
+                                }))
+                              }
+                              placeholder="e.g. 11071628394050"
+                              className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-mono bg-white"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {status.success && <span className="text-xs font-bold text-emerald-700">{status.success}</span>}
+                            {status.error && <span className="text-xs font-bold text-red-600">{status.error}</span>}
+                            <button
+                              type="button"
+                              onClick={() => handleSaveTemplate(kind)}
+                              disabled={status.saving}
+                              className="px-5 py-2.5 bg-rose-900 hover:bg-rose-800 text-white rounded-xl text-xs font-bold transition"
+                            >
+                              {status.saving ? 'Saving...' : 'Save Template'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-white rounded-xl border border-neutral-200 space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-neutral-500 uppercase">
+                            <span>Live Preview:</span>
+                            <span className={charCount > 160 ? 'text-amber-600 font-bold' : 'text-neutral-500'}>
+                              {charCount} chars {charCount > 160 && '(Warn: > 160 chars)'}
+                            </span>
+                          </div>
+                          <div className="font-mono text-xs text-neutral-800 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100">
+                            "{preview}"
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* SUB-VIEW 7: AUDIT LOG */}
       {subTab === 'audit' && (
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5">
-          <h2 className="text-base font-black text-rose-950 mb-3">System Audit Log</h2>
+          <h2 className="text-base font-black text-rose-950 mb-4">Immutable Audit Log</h2>
           <div className="space-y-2">
             {auditLogs.map((log) => (
-              <div key={log.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs">
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="font-bold text-rose-950 uppercase">{log.action}</span>
-                  <span className="text-neutral-400">{new Date(log.created_at).toLocaleString('en-IN')}</span>
+              <div key={log.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs font-mono">
+                <div className="font-bold text-rose-900 text-[11px]">
+                  Action: {log.action} · Staff: {log.staff_id} · {new Date(log.created_at).toLocaleString('en-GB')}
                 </div>
-                <div className="font-mono text-[10px] text-neutral-600 bg-white p-2 rounded border border-neutral-200 overflow-x-auto">
-                  {JSON.stringify(log.details)}
-                </div>
+                <pre className="text-[10px] text-neutral-600 mt-1 overflow-x-auto">
+                  {JSON.stringify(log.details, null, 2)}
+                </pre>
               </div>
             ))}
           </div>
