@@ -38,8 +38,8 @@ export interface CustomerPortalData {
     status: 'unused' | 'used';
     qrDataUri: string;
     whatsappShareUrl: string;
-    bRewardLabel: string;
-    promisedReturnPounds: number;
+    friendDiscountPounds: number;
+    referrerRewardPounds: number;
   } | null;
   marketingConsent: boolean;
   optedOut: boolean;
@@ -49,8 +49,8 @@ export interface OwnerDashboardData {
   totalCustomers: number;
   referralCustomers: number;
   referralCodesUsed: number;
+  discountsGivenPounds: number;
   returnsPaidPounds: number;
-  friendCreditGivenPounds: number;
   creditRedeemedPounds: number;
   creditOutstandingPounds: number;
   creditExpiredPounds: number;
@@ -65,12 +65,9 @@ export interface OwnerDashboardData {
 
 export interface SettingsData {
   scheme_enabled: boolean;
-  a_return_type: 'percent' | 'fixed';
-  a_return_value: number;
-  b_credit_type: 'percent' | 'fixed';
-  b_credit_value: number;
-  b_credit_cap: number | null;
-  min_bill_for_referral: number | null;
+  friend_discount: number;
+  referrer_reward: number;
+  min_spend: number;
   expiry_days: number;
   reminder_days_before: number;
   max_credit_share: number;
@@ -86,6 +83,7 @@ export interface SaleItem {
   customerPhone: string;
   receipt_ref: string | null;
   billAmountPounds: number;
+  discountAmountPounds?: number;
   creditUsedPounds: number;
   referral_code_id: string | null;
   staff_id: string;
@@ -125,7 +123,6 @@ export interface MessageTemplateItem {
   id: string;
   kind: MessageTemplateKind;
   body: string;
-  dlt_template_id: string | null;
   updated_at: string;
   updated_by: string;
 }

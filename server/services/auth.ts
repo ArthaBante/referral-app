@@ -57,25 +57,22 @@ export class AuthService {
     activeSessions.delete(token);
   }
 
-  // Populate seed database with UK sample data
   public static populateSeed(database: DatabaseSchema) {
     const ownerHash = bcrypt.hashSync('change-me', 10);
     const cashierHash = bcrypt.hashSync('change-me', 10);
 
     database.settings = {
       scheme_enabled: true,
-      a_return_type: 'percent',
-      a_return_value: 20,
-      b_credit_type: 'percent',
-      b_credit_value: 10,
-      b_credit_cap: null,
-      min_bill_for_referral: null,
+      friend_discount: 5,
+      referrer_reward: 5,
+      min_spend: 20,
       expiry_days: 90,
       reminder_days_before: 7,
       max_credit_share: 50,
-      shop_name: 'Demo Salon',
+      shop_name: 'Your Business',
       updated_at: new Date().toISOString(),
       updated_by: 'Demo Owner (Owner)',
+      last_daily_job_run_date: null,
     };
 
     const ownerId = crypto.randomUUID();
@@ -102,13 +99,11 @@ export class AuthService {
       },
     ];
 
-    // Customer A: Emma Smith (+447700900101)
     const custAId = crypto.randomUUID();
     const custAToken = 'token-emma-smith-uk-789012345678';
     const codeAId = crypto.randomUUID();
     const codeA = 'EMM789';
 
-    // Customer B: Sophie Taylor (+447700900102) - referred by A
     const custBId = crypto.randomUUID();
     const custBToken = 'token-sophie-taylor-uk-1234567890123';
     const codeB = 'SOP456';
@@ -178,13 +173,13 @@ export class AuthService {
     const charlotteId = database.customers[3].id;
     const harryId = database.customers[4].id;
 
-    // Sales: Emma's initial sale of £60.00 (£6000 pence), Sophie's sale of £60.00 (£6000 pence) with code EMM789
     database.sales = [
       {
         id: saleAId,
         customer_id: custAId,
         receipt_ref: 'REC-26-001',
         bill_amount: 6000,
+        discount_amount: 0,
         credit_used: 0,
         referral_code_id: null,
         staff_id: cashierId,
@@ -195,6 +190,7 @@ export class AuthService {
         customer_id: custBId,
         receipt_ref: 'REC-26-002',
         bill_amount: 6000,
+        discount_amount: 500,
         credit_used: 0,
         referral_code_id: codeAId,
         staff_id: cashierId,
@@ -202,7 +198,6 @@ export class AuthService {
       },
     ];
 
-    // Referral codes
     database.referral_codes = [
       {
         id: codeAId,
@@ -213,7 +208,7 @@ export class AuthService {
         used_sale_id: saleBId,
         used_at: new Date(Date.now() - 3 * 86400000).toISOString(),
         issued_sale_id: saleAId,
-        referrer_return_amount: 1200, // 20% of £60 = £12 (1200 pence)
+        referrer_return_amount: 1200,
         return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
       },
       {
@@ -225,7 +220,7 @@ export class AuthService {
         used_sale_id: null,
         used_at: null,
         issued_sale_id: saleBId,
-        referrer_return_amount: 1200, // 20% of £60 = £12
+        referrer_return_amount: 1200,
         return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
       },
       {
@@ -314,7 +309,6 @@ export class AuthService {
     database.otp_codes = [];
     database.redemption_tokens = [];
 
-    // Seed default English message templates
     database.message_templates = [];
     const kinds = Object.keys(TEMPLATE_CONFIG) as (keyof typeof TEMPLATE_CONFIG)[];
     for (const kind of kinds) {
@@ -323,7 +317,6 @@ export class AuthService {
         id: crypto.randomUUID(),
         kind,
         body: cfg.defaultEn,
-        dlt_template_id: null,
         updated_at: new Date().toISOString(),
         updated_by: 'Demo Owner (Owner)',
       });
@@ -340,41 +333,31 @@ export class AuthService {
     ];
   }
 
+  // Never wipe data on startup. Seed demo data ONLY when database has no staff and no customers at all.
   public static initSeedData(forceRegenerate = false) {
     const snapshot = db.getSnapshot();
-    const needsRegen = forceRegenerate ||
-      snapshot.staff.length === 0 ||
-      snapshot.settings?.shop_name === 'Sangam Bazaar' ||
-      !snapshot.staff.some((s) => s.name.includes('Demo Owner')) ||
-      (snapshot.settings as any).a_credit_type !== undefined;
+    const isBrandNew = snapshot.staff.length === 0 && snapshot.customers.length === 0;
 
-    if (needsRegen) {
-      console.log('[Seed] Regenerating .data/db.json with RefFrnd UK demo data...');
+    if (forceRegenerate || isBrandNew) {
+      console.log('[Seed] Initializing brand-new database with RefFrnd demo data...');
       db.transaction((database) => {
         this.populateSeed(database);
         return true;
       });
-      console.log('[Seed] Database successfully regenerated!');
-    } else if (!snapshot.message_templates || snapshot.message_templates.length < 7) {
-      db.transaction((database) => {
-        database.message_templates = database.message_templates || [];
-        const existingMap = new Set(database.message_templates.map((t) => t.kind));
-        const kinds = Object.keys(TEMPLATE_CONFIG) as (keyof typeof TEMPLATE_CONFIG)[];
-        for (const kind of kinds) {
-          const cfg = TEMPLATE_CONFIG[kind];
-          if (!existingMap.has(kind)) {
-            database.message_templates.push({
-              id: crypto.randomUUID(),
-              kind,
-              body: cfg.defaultEn,
-              dlt_template_id: null,
-              updated_at: new Date().toISOString(),
-              updated_by: 'Demo Owner (Owner)',
-            });
-          }
-        }
-        return true;
-      });
+      console.log('[Seed] Database successfully initialized!');
+    } else {
+      if (
+        snapshot.staff.some(
+          (s) =>
+            s.name.includes('Sangam Bazaar') ||
+            s.name.includes('Vivek Udasi') ||
+            s.name.includes('Raigarh')
+        )
+      ) {
+        console.warn(
+          '[Seed Warning] Old-format data detected in database. Preserving existing data without overwriting.'
+        );
+      }
     }
   }
 

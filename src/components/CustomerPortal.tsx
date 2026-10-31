@@ -202,7 +202,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               </div>
               <h2 className="text-lg font-black text-rose-950">Refer a Friend</h2>
               <p className="text-xs text-neutral-700 mt-1 max-w-xs mx-auto font-medium">
-                Share with one friend: they get <strong>{data.referralCode.bRewardLabel} store credit</strong>, you get <strong>£{data.referralCode.promisedReturnPounds.toFixed(2)} back</strong>.
+                Give a friend £{data.referralCode.friendDiscountPounds} off their first visit. You get £{data.referralCode.referrerRewardPounds} back.
               </p>
 
               <div className="my-3">

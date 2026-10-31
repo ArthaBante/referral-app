@@ -140,7 +140,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
   const [templates, setTemplates] = useState<MessageTemplateItem[]>([]);
   const [templateConfigs, setTemplateConfigs] = useState<Record<string, TemplateConfigItem>>({});
   const [loadingTemplates, setLoadingTemplates] = useState(false);
-  const [templateEdits, setTemplateEdits] = useState<Record<string, { body: string; dlt_template_id: string }>>({});
+  const [templateEdits, setTemplateEdits] = useState<Record<string, { body: string }>>({});
   const [templateStatus, setTemplateStatus] = useState<Record<string, { error?: string; success?: string; saving?: boolean }>>({});
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
@@ -231,12 +231,11 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
       setTemplates(data.templates);
       setTemplateConfigs(data.configs);
 
-      const edits: Record<string, { body: string; dlt_template_id: string }> = {};
+      const edits: Record<string, { body: string }> = {};
       data.templates.forEach((t) => {
         const key = t.kind;
         edits[key] = {
           body: t.body,
-          dlt_template_id: t.dlt_template_id || '',
         };
       });
       setTemplateEdits(edits);
@@ -289,7 +288,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
       const res = await ApiClient.updateMessageTemplate({
         kind,
         body: edit.body,
-        dlt_template_id: edit.dlt_template_id || null,
       });
 
       setTemplates((prev) => prev.map((t) => (t.kind === kind ? res.template : t)));
@@ -405,21 +403,10 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
 
   const calculateLiveExample = () => {
     if (!settings) return '';
-    const emmaReturn = settings.a_return_type === 'percent'
-      ? Math.round((60 * settings.a_return_value) / 100 * 100) / 100
-      : settings.a_return_value;
-
-    let sophieCredit = 0;
-    if (settings.b_credit_type === 'percent') {
-      sophieCredit = Math.round((60 * settings.b_credit_value) / 100 * 100) / 100;
-      if (settings.b_credit_cap) {
-        sophieCredit = Math.min(sophieCredit, settings.b_credit_cap);
-      }
-    } else {
-      sophieCredit = Math.min(settings.b_credit_value, 60);
-    }
-
-    return `If Emma spends £60 and her friend Sophie spends £60: Emma gets £${emmaReturn.toFixed(2)} back, Sophie gets £${sophieCredit.toFixed(2)} store credit.`;
+    const fd = settings.friend_discount ?? 5;
+    const rr = settings.referrer_reward ?? 5;
+    const paid = 40 - fd;
+    return `If Sophie uses Emma's code and spends £40: Sophie pays £${paid}, Emma gets £${rr} back.`;
   };
 
   const handleRunDailyJob = async () => {
@@ -645,9 +632,9 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
               </div>
 
               <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200">
-                <span className="text-[11px] font-bold text-indigo-800 block">Credit Given to Friends</span>
-                <span className="text-xl font-black text-indigo-950 mt-0.5 block">£{dashboard.friendCreditGivenPounds.toFixed(2)}</span>
-                <span className="text-[10px] text-neutral-500">Store credit for next visit</span>
+                <span className="text-[11px] font-bold text-indigo-800 block">Discounts Given to Friends</span>
+                <span className="text-xl font-black text-indigo-950 mt-0.5 block">£{(dashboard as any).discountsGivenPounds?.toFixed(2) || '0.00'}</span>
+                <span className="text-[10px] text-neutral-500">Off first purchase</span>
               </div>
 
               <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
@@ -703,109 +690,47 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
             </label>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-rose-900">
-                Return to referrer (% of their own first purchase, or fixed £)
-              </h3>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Return Type</label>
-                  <select
-                    value={settings.a_return_type}
-                    onChange={(e) => setSettings({ ...settings, a_return_type: e.target.value as any })}
-                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                  >
-                    <option value="percent">Percentage (%)</option>
-                    <option value="fixed">Fixed Pounds (£)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                    Value {settings.a_return_type === 'percent' ? '(%)' : '(£)'}
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={settings.a_return_type === 'percent' ? 100 : undefined}
-                    value={settings.a_return_value}
-                    onChange={(e) => setSettings({ ...settings, a_return_value: parseFloat(e.target.value) || 0 })}
-                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                  Min Bill To Qualify For Referral (£, empty for none)
-                </label>
-                <input
-                  type="number"
-                  placeholder="e.g. 20"
-                  value={settings.min_bill_for_referral ?? ''}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      min_bill_for_referral: e.target.value ? parseFloat(e.target.value) : null,
-                    })
-                  }
-                  className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                />
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
+              <label className="block text-xs font-black uppercase tracking-wider text-rose-950">
+                Friend Discount (£)
+              </label>
+              <p className="text-[11px] text-neutral-500">Friend gets £__ off their first purchase</p>
+              <input
+                type="number"
+                min="1"
+                value={settings.friend_discount}
+                onChange={(e) => setSettings({ ...settings, friend_discount: parseFloat(e.target.value) || 0 })}
+                className="w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none bg-white"
+              />
             </div>
 
-            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-amber-900">
-                Friend's store credit
-              </h3>
+            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
+              <label className="block text-xs font-black uppercase tracking-wider text-amber-950">
+                Referrer Reward (£)
+              </label>
+              <p className="text-[11px] text-neutral-500">Referrer gets £__ back when their friend buys</p>
+              <input
+                type="number"
+                min="1"
+                value={settings.referrer_reward}
+                onChange={(e) => setSettings({ ...settings, referrer_reward: parseFloat(e.target.value) || 0 })}
+                className="w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none bg-white"
+              />
+            </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">Credit Type</label>
-                  <select
-                    value={settings.b_credit_type}
-                    onChange={(e) => setSettings({ ...settings, b_credit_type: e.target.value as any })}
-                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                  >
-                    <option value="percent">Percentage (%)</option>
-                    <option value="fixed">Fixed Pounds (£)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                    Value {settings.b_credit_type === 'percent' ? '(%)' : '(£)'}
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={settings.b_credit_type === 'percent' ? 100 : undefined}
-                    value={settings.b_credit_value}
-                    onChange={(e) => setSettings({ ...settings, b_credit_value: parseFloat(e.target.value) || 0 })}
-                    className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                  Credit Cap in Pounds (Optional, empty for no cap)
-                </label>
-                <input
-                  type="number"
-                  placeholder="e.g. 50"
-                  value={settings.b_credit_cap ?? ''}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      b_credit_cap: e.target.value ? parseFloat(e.target.value) : null,
-                    })
-                  }
-                  className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-                />
-              </div>
+            <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
+              <label className="block text-xs font-black uppercase tracking-wider text-emerald-950">
+                Minimum Spend (£)
+              </label>
+              <p className="text-[11px] text-neutral-500">Friend must spend at least £__ to use a code</p>
+              <input
+                type="number"
+                min="1"
+                value={settings.min_spend}
+                onChange={(e) => setSettings({ ...settings, min_spend: parseFloat(e.target.value) || 0 })}
+                className="w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none bg-white"
+              />
             </div>
           </div>
 
@@ -1280,25 +1205,15 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({ onViewCustomerPortal }
                           />
                         </div>
 
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-neutral-200">
-                          <div className="w-full sm:w-64">
-                            <label className="block text-[10px] font-bold text-neutral-500 uppercase mb-0.5">
-                              DLT Template ID (optional)
-                            </label>
-                            <input
-                              type="text"
-                              value={edit.dlt_template_id}
-                              onChange={(e) =>
-                                setTemplateEdits((prev) => ({
-                                  ...prev,
-                                  [kind]: { ...prev[kind], dlt_template_id: e.target.value },
-                                }))
-                              }
-                              placeholder="e.g. 11071628394050"
-                              className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-mono bg-white"
-                            />
-                          </div>
-
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-200">
+                          <button
+                            type="button"
+                            onClick={() => handleResetTemplate(kind)}
+                            disabled={status.saving}
+                            className="text-xs text-neutral-500 hover:text-rose-900 font-bold underline"
+                          >
+                            Reset to default
+                          </button>
                           <div className="flex items-center gap-2">
                             {status.success && <span className="text-xs font-bold text-emerald-700">{status.success}</span>}
                             {status.error && <span className="text-xs font-bold text-red-600">{status.error}</span>}

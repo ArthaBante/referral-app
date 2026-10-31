@@ -87,37 +87,6 @@ export class BusinessService {
     }).format(d);
   }
 
-  public static formatRewardLabel(type: 'percent' | 'fixed', value: number): string {
-    return type === 'percent' ? `${value}%` : `£${value}`;
-  }
-
-  // Calculate promised referrer return on customer's own first purchase of billAmountPence
-  public static calculateReferrerReturn(billAmountPence: number, settings: Settings): number {
-    if (billAmountPence <= 0) return 0;
-    if (settings.a_return_type === 'percent') {
-      const calculated = (billAmountPence * settings.a_return_value) / 100;
-      return Math.round(calculated); // nearest penny
-    } else {
-      return settings.a_return_value * 100;
-    }
-  }
-
-  // Calculate friend B's store credit on their first purchase of billAmountPence
-  public static calculateFriendCredit(billAmountPence: number, settings: Settings): number {
-    if (billAmountPence <= 0) return 0;
-    let creditPence = 0;
-    if (settings.b_credit_type === 'percent') {
-      const calculated = (billAmountPence * settings.b_credit_value) / 100;
-      creditPence = Math.round(calculated); // nearest penny
-      if (settings.b_credit_cap) {
-        creditPence = Math.min(creditPence, settings.b_credit_cap * 100);
-      }
-    } else {
-      creditPence = Math.min(settings.b_credit_value * 100, billAmountPence);
-    }
-    return creditPence;
-  }
-
   public static validateReferralCode(
     database: DatabaseSchema,
     codeStr: string,
@@ -154,10 +123,10 @@ export class BusinessService {
       return { valid: false, reason: 'Only for new customers' };
     }
 
-    if (database.settings.min_bill_for_referral && billAmountPence !== undefined) {
-      const minPence = database.settings.min_bill_for_referral * 100;
-      if (billAmountPence < minPence) {
-        return { valid: false, reason: `Bill must be at least £${database.settings.min_bill_for_referral}` };
+    if (billAmountPence !== undefined) {
+      const minSpendPence = (database.settings.min_spend ?? 20) * 100;
+      if (billAmountPence < minSpendPence) {
+        return { valid: false, reason: `Spend at least £${database.settings.min_spend} to use a code` };
       }
     }
 
@@ -283,6 +252,7 @@ export class BusinessService {
     customerId: string,
     scannedTokenOrUrl: string
   ): { verified: boolean; redemptionToken: string; customerName: string } {
+    const now = new Date();
     const customer = database.customers.find((c) => c.id === customerId);
     if (!customer) {
       throw new Error('Customer not found');
@@ -304,7 +274,7 @@ export class BusinessService {
       token,
       expires_at: expiresAt,
       used: false,
-      created_at: new Date().toISOString(),
+      created_at: now.toISOString(),
     });
 
     return { verified: true, redemptionToken: token, customerName: customer.name };
@@ -338,7 +308,6 @@ export class BusinessService {
       throw new Error('Bill amount must be greater than £0');
     }
 
-    // Block duplicate receipt numbers ONLY when a receipt number is entered
     if (cleanReceiptRef) {
       const duplicateBill = database.sales.find(
         (s) => s.receipt_ref && s.receipt_ref.toLowerCase() === cleanReceiptRef.toLowerCase()
@@ -353,7 +322,7 @@ export class BusinessService {
 
     let appliedReferralCodeRow: ReferralCode | null = null;
     let referrerCustomer: Customer | null = null;
-    let friendCreditPence = 0;
+    let friendDiscountPence = 0;
     let referrerReturnPence = 0;
 
     if (referralCode) {
@@ -363,7 +332,7 @@ export class BusinessService {
       }
       appliedReferralCodeRow = check.referralCode!;
       referrerCustomer = check.ownerCustomer!;
-      friendCreditPence = this.calculateFriendCredit(billAmountPence, database.settings);
+      friendDiscountPence = database.settings.friend_discount * 100;
       referrerReturnPence = appliedReferralCodeRow.referrer_return_amount;
     }
 
@@ -387,7 +356,7 @@ export class BusinessService {
       };
       database.customers.push(customer);
 
-      const promisedReturnOnOwnCode = this.calculateReferrerReturn(billAmountPence, database.settings);
+      const promisedReturnOnOwnCode = database.settings.referrer_reward * 100;
 
       let uniqueCode = this.generateReferralCode();
       while (database.referral_codes.some((rc) => rc.code === uniqueCode)) {
@@ -404,10 +373,6 @@ export class BusinessService {
         used_at: null,
         issued_sale_id: '',
         referrer_return_amount: promisedReturnOnOwnCode,
-        return_settings_snapshot: {
-          a_return_type: database.settings.a_return_type,
-          a_return_value: database.settings.a_return_value,
-        },
       });
     }
 
@@ -445,7 +410,8 @@ export class BusinessService {
 
       tokenRecord.used = true;
 
-      const usable = this.calculateUsableCredit(database, customer.id, billAmountPence);
+      const effectiveBillForCredit = billAmountPence - friendDiscountPence;
+      const usable = this.calculateUsableCredit(database, customer.id, effectiveBillForCredit);
       actualCreditUsedPence = Math.min(requestedCreditPence, usable.maxUsableCredit);
 
       if (actualCreditUsedPence > 0) {
@@ -477,6 +443,7 @@ export class BusinessService {
       customer_id: customer.id,
       receipt_ref: cleanReceiptRef,
       bill_amount: billAmountPence,
+      discount_amount: friendDiscountPence,
       credit_used: actualCreditUsedPence,
       referral_code_id: appliedReferralCodeRow ? appliedReferralCodeRow.id : null,
       staff_id: staffId,
@@ -524,25 +491,6 @@ export class BusinessService {
         created_at: new Date().toISOString(),
       });
 
-      database.credits.push({
-        id: crypto.randomUUID(),
-        customer_id: customer.id,
-        source_sale_id: saleId,
-        amount: friendCreditPence,
-        remaining: friendCreditPence,
-        status: 'active',
-        expires_at: expiresAt,
-        source: 'friend_credit',
-        settings_snapshot: {
-          b_credit_type: database.settings.b_credit_type,
-          b_credit_value: database.settings.b_credit_value,
-          expiry_days: database.settings.expiry_days,
-        },
-        reason: `Friend credit using ${referrerCustomer.name}'s referral code`,
-        created_by_staff_id: staffId,
-        created_at: new Date().toISOString(),
-      });
-
       const appUrl = process.env.APP_URL || '';
       messagingService.send(database, {
         customerId: referrerCustomer.id,
@@ -560,8 +508,8 @@ export class BusinessService {
 
     if (isNewCustomer) {
       const ownCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer!.id);
-      const bReward = this.formatRewardLabel(database.settings.b_credit_type, database.settings.b_credit_value);
-      const promisedPounds = ownCode ? this.penceToPounds(ownCode.referrer_return_amount) : 0;
+      const friendDiscountStr = this.formatPounds(database.settings.friend_discount * 100);
+      const referrerRewardStr = this.formatPounds(database.settings.referrer_reward * 100);
 
       messagingService.send(database, {
         customerId: customer.id,
@@ -569,9 +517,8 @@ export class BusinessService {
         data: {
           name: customer.name,
           link: customerLink,
-          b_reward: bReward,
-          a_amount: `£${promisedPounds.toFixed(2)}`,
-          credit: friendCreditPence > 0 ? this.formatPounds(friendCreditPence) : undefined,
+          friend_discount: friendDiscountStr,
+          referrer_reward: referrerRewardStr,
         },
       });
     } else if (actualCreditUsedPence > 0) {
@@ -596,12 +543,12 @@ export class BusinessService {
       isNewCustomer,
       receiptRef: cleanReceiptRef,
       billAmountPounds: this.penceToPounds(billAmountPence),
+      discountAmountPounds: this.penceToPounds(friendDiscountPence),
       creditUsedPounds: this.penceToPounds(actualCreditUsedPence),
-      finalAmountPounds: this.penceToPounds(billAmountPence - actualCreditUsedPence),
+      finalAmountPounds: this.penceToPounds(billAmountPence - friendDiscountPence - actualCreditUsedPence),
       referralCodeUsed: appliedReferralCodeRow?.code || null,
       referrerName: referrerCustomer?.name || null,
       referrerReturnPounds: this.penceToPounds(referrerReturnPence),
-      friendCreditPounds: this.penceToPounds(friendCreditPence),
       messagesSent: database.messages.slice(0, 2),
     };
   }
@@ -623,7 +570,7 @@ export class BusinessService {
       }
     }
 
-    const reminderDays = settings.reminder_days_before || 7;
+    const reminderDays = settings.reminder_days_before !== undefined ? settings.reminder_days_before : 7;
     if (reminderDays > 0) {
       const reminderWindowMs = reminderDays * 86400000;
       for (const credit of database.credits) {

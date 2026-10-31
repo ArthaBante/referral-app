@@ -7,9 +7,8 @@ export interface SendMessageParams {
   data: {
     name?: string;
     link?: string;
-    b_reward?: string;
-    a_amount?: string;
-    credit?: string;
+    friend_discount?: string;
+    referrer_reward?: string;
     amount?: string;
     expiry?: string;
     used?: string;
@@ -34,16 +33,16 @@ export const TEMPLATE_CONFIG: Record<MessageTemplateKind, TemplateConfigDef> = {
     title: 'Welcome — new customer, no code',
     description: 'Sent to a new customer after their first purchase when they did not use a referral code.',
     requiredPlaceholders: ['link'],
-    supportedPlaceholders: ['shop', 'name', 'link', 'b_reward', 'a_amount'],
-    defaultEn: '{shop}: Thanks {name}! Your account and referral code: {link}. Give your code to one friend: they get {b_reward} credit, you get {a_amount} back.',
+    supportedPlaceholders: ['shop', 'name', 'link', 'friend_discount', 'referrer_reward'],
+    defaultEn: '{shop}: Thanks {name}! Your account and code: {link}. Give a friend {friend_discount} off, get {referrer_reward} back.',
   },
   welcome_with_code: {
     kind: 'welcome_with_code',
     title: "Welcome — new customer who used a friend's code",
     description: "Sent to a new customer after their first purchase when they used a friend's referral code.",
     requiredPlaceholders: ['link'],
-    supportedPlaceholders: ['shop', 'name', 'link', 'b_reward', 'a_amount', 'credit'],
-    defaultEn: "{shop}: Thanks {name}! Your account and referral code: {link}. Give your code to one friend: they get {b_reward} credit, you get {a_amount} back. You have {credit} store credit for your next visit.",
+    supportedPlaceholders: ['shop', 'name', 'link', 'friend_discount', 'referrer_reward'],
+    defaultEn: '{shop}: Thanks {name}! You saved {friend_discount} today. Your own code: {link}. Give a friend {friend_discount} off, get {referrer_reward} back.',
   },
   referral_return: {
     kind: 'referral_return',
@@ -139,6 +138,9 @@ export class MessagingService {
     if (database && database.message_templates) {
       const stored = database.message_templates.find((t) => t.kind === kind);
       if (stored && stored.body && stored.body.trim()) {
+        if (/\{(b_reward|a_amount|credit)\}/.test(stored.body)) {
+          return config.defaultEn;
+        }
         return stored.body;
       }
     }
@@ -151,7 +153,7 @@ export class MessagingService {
     settings: Settings,
     data: SendMessageParams['data']
   ): string {
-    const shop = settings.shop_name || 'Demo Salon';
+    const shop = settings.shop_name || 'Your Business';
 
     if (kind === 'offer') {
       const base = (data.customBody || '').trim();
@@ -162,7 +164,8 @@ export class MessagingService {
 
     let templateKind: MessageTemplateKind;
     if (kind === 'welcome') {
-      templateKind = data.credit ? 'welcome_with_code' : 'welcome_no_code';
+      // If welcoming a customer who used a code, we can distinguish or use welcome_with_code if friend_discount was saved/applied
+      templateKind = data.friend_discount ? 'welcome_with_code' : 'welcome_no_code';
     } else if (kind === 'referral_return') {
       templateKind = 'referral_return';
     } else if (kind === 'credit_expiring') {
@@ -181,9 +184,8 @@ export class MessagingService {
       shop,
       name: data.name || 'valued customer',
       link: data.link || '',
-      b_reward: data.b_reward || '',
-      a_amount: data.a_amount || '',
-      credit: data.credit || '',
+      friend_discount: data.friend_discount || `£${settings.friend_discount.toFixed(2)}`,
+      referrer_reward: data.referrer_reward || `£${settings.referrer_reward.toFixed(2)}`,
       amount: data.amount || '',
       expiry: data.expiry || '',
       used: data.used || '',

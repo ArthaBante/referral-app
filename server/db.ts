@@ -30,7 +30,8 @@ export interface Sale {
   id: string;
   customer_id: string;
   receipt_ref: string | null;
-  bill_amount: number; // pence
+  bill_amount: number; // pence (full price)
+  discount_amount: number; // pence
   credit_used: number; // pence
   referral_code_id: string | null;
   staff_id: string;
@@ -95,18 +96,16 @@ export interface RedemptionToken {
 
 export interface Settings {
   scheme_enabled: boolean;
-  a_return_type: 'percent' | 'fixed';
-  a_return_value: number; // % or £
-  b_credit_type: 'percent' | 'fixed';
-  b_credit_value: number; // % or £
-  b_credit_cap: number | null; // £ cap
-  min_bill_for_referral: number | null; // £
+  friend_discount: number; // £
+  referrer_reward: number; // £
+  min_spend: number; // £
   expiry_days: number;
   reminder_days_before: number;
-  max_credit_share: number; // % (default 50)
+  max_credit_share: number;
   shop_name: string;
   updated_at: string;
   updated_by: string;
+  last_daily_job_run_date?: string | null;
 }
 
 export interface Staff {
@@ -140,7 +139,6 @@ export interface MessageTemplate {
   id: string;
   kind: MessageTemplateKind;
   body: string;
-  dlt_template_id: string | null;
   updated_at: string;
   updated_by: string;
 }
@@ -176,18 +174,16 @@ export function getDefaultDatabaseSchema(): DatabaseSchema {
     redemption_tokens: [],
     settings: {
       scheme_enabled: true,
-      a_return_type: 'percent',
-      a_return_value: 20,
-      b_credit_type: 'percent',
-      b_credit_value: 10,
-      b_credit_cap: null,
-      min_bill_for_referral: null,
+      friend_discount: 5,
+      referrer_reward: 5,
+      min_spend: 20,
       expiry_days: 90,
       reminder_days_before: 7,
       max_credit_share: 50,
-      shop_name: 'Demo Salon',
+      shop_name: 'Your Business',
       updated_at: now,
       updated_by: 'system',
+      last_daily_job_run_date: null,
     },
     staff: [],
     audit_log: [],
@@ -214,7 +210,17 @@ class Database {
         const parsed = JSON.parse(raw);
         if (!parsed.redemption_tokens) parsed.redemption_tokens = [];
         if (!parsed.message_templates) parsed.message_templates = [];
-        // Migration check for old tally_bill_no or paise or shop_name
+        if (parsed.settings && parsed.settings.friend_discount === undefined) {
+          const def = getDefaultDatabaseSchema();
+          parsed.settings = {
+            ...def.settings,
+            shop_name: parsed.settings.shop_name || def.settings.shop_name,
+            scheme_enabled: parsed.settings.scheme_enabled ?? def.settings.scheme_enabled,
+            expiry_days: parsed.settings.expiry_days ?? def.settings.expiry_days,
+            reminder_days_before: parsed.settings.reminder_days_before ?? def.settings.reminder_days_before,
+            max_credit_share: parsed.settings.max_credit_share ?? def.settings.max_credit_share,
+          };
+        }
         return parsed;
       } catch (err) {
         console.error('Error reading db.json, reinitializing...', err);
