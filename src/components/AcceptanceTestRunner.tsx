@@ -43,8 +43,8 @@ export const AcceptanceTestRunner: React.FC = () => {
               </h1>
             </div>
             <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
-              Automated execution of all 24 mandatory business rule scenarios defined in the Referral Portal Build
-              Spec, testing transactional integrity, locking, OTP lockouts, credit FIFO, and message template customization.
+              Automated execution of all 9 mandatory business rule scenarios defined in the RefFrnd Build
+              Spec, testing transactional integrity, locking, OTP verification, fixed reward model, and message template customization.
             </p>
           </div>
 
@@ -56,12 +56,12 @@ export const AcceptanceTestRunner: React.FC = () => {
             {running ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Running Scenarios 1–24...</span>
+                <span>Running Scenarios 1–9...</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-white" />
-                <span>Run All 24 Acceptance Tests</span>
+                <span>Run All 9 Acceptance Tests</span>
               </>
             )}
           </button>
@@ -83,11 +83,11 @@ export const AcceptanceTestRunner: React.FC = () => {
                 <div>
                   <div className="text-lg font-black">
                     {testReport.allPassed
-                      ? 'All 19 Scenarios Passed 100% Successfully!'
+                      ? 'All 9 Scenarios Passed 100% Successfully!'
                       : `${testReport.passedCount} of ${testReport.total} Scenarios Passed`}
                   </div>
                   <div className="text-xs text-neutral-600 font-medium">
-                    Verified with database ACID transactions, IST dates, and exact paise math.
+                    Verified with database ACID transactions, IST dates, and exact pence math.
                   </div>
                 </div>
               </div>
