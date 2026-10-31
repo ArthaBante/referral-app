@@ -510,10 +510,11 @@ export class BusinessService {
       const ownCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer!.id);
       const friendDiscountStr = this.formatPounds(database.settings.friend_discount * 100);
       const referrerRewardStr = this.formatPounds(database.settings.referrer_reward * 100);
+      const usedCode = !!appliedReferralCodeRow;
 
       messagingService.send(database, {
         customerId: customer.id,
-        kind: 'welcome',
+        kind: usedCode ? 'welcome_with_code' : 'welcome_no_code',
         data: {
           name: customer.name,
           link: customerLink,

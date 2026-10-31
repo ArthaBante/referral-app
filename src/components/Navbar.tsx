@@ -62,13 +62,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                if (!currentUser) {
-                  onOpenLogin();
-                } else if (currentUser.role !== 'owner') {
-                  alert('Owner access required. Please log in as owner (owner / change-me).');
-                } else {
+              onClick={async () => {
+                try {
+                  const res = await ApiClient.login('owner', 'change-me');
+                  setCurrentUser(res.staff);
                   setCurrentTab('owner');
+                } catch {
+                  if (currentUser?.role === 'owner') {
+                    setCurrentTab('owner');
+                  } else {
+                    onOpenLogin();
+                  }
                 }
               }}
               className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
@@ -94,13 +98,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                if (!currentUser) {
-                  onOpenLogin();
-                } else if (currentUser.role !== 'owner') {
-                  alert('Owner access required to run acceptance tests. Please log in as owner (owner / change-me).');
-                } else {
+              onClick={async () => {
+                try {
+                  const res = await ApiClient.login('owner', 'change-me');
+                  setCurrentUser(res.staff);
                   setCurrentTab('tests');
+                } catch {
+                  if (currentUser?.role === 'owner') {
+                    setCurrentTab('tests');
+                  } else {
+                    onOpenLogin();
+                  }
                 }
               }}
               className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${

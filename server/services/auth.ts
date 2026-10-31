@@ -71,7 +71,7 @@ export class AuthService {
       max_credit_share: 50,
       shop_name: 'Your Business',
       updated_at: new Date().toISOString(),
-      updated_by: 'Demo Owner (Owner)',
+      updated_by: 'Owner',
       last_daily_job_run_date: null,
     };
 
@@ -81,7 +81,7 @@ export class AuthService {
     database.staff = [
       {
         id: ownerId,
-        name: 'Demo Owner (Owner)',
+        name: 'Store Owner',
         username: 'owner',
         password_hash: ownerHash,
         role: 'owner',
@@ -90,7 +90,7 @@ export class AuthService {
       },
       {
         id: cashierId,
-        name: 'Demo Cashier',
+        name: 'Store Cashier',
         username: 'cashier',
         password_hash: cashierHash,
         role: 'cashier',
@@ -99,211 +99,10 @@ export class AuthService {
       },
     ];
 
-    const custAId = crypto.randomUUID();
-    const custAToken = 'token-emma-smith-uk-789012345678';
-    const codeAId = crypto.randomUUID();
-    const codeA = 'EMM789';
-
-    const custBId = crypto.randomUUID();
-    const custBToken = 'token-sophie-taylor-uk-1234567890123';
-    const codeB = 'SOP456';
-
-    const saleAId = crypto.randomUUID();
-    const saleBId = crypto.randomUUID();
-
-    database.customers = [
-      {
-        id: custAId,
-        name: 'Emma Smith',
-        phone: '+447700900101',
-        personal_token: custAToken,
-        marketing_consent: true,
-        consent_at: new Date(Date.now() - 10 * 86400000).toISOString(),
-        opted_out_at: null,
-        referred_by_customer_id: null,
-        created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
-      },
-      {
-        id: custBId,
-        name: 'Sophie Taylor',
-        phone: '+447700900102',
-        personal_token: custBToken,
-        marketing_consent: true,
-        consent_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-        opted_out_at: null,
-        referred_by_customer_id: custAId,
-        created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-      },
-      {
-        id: crypto.randomUUID(),
-        name: 'Oliver Jones',
-        phone: '+447700900103',
-        personal_token: 'token-oliver-jones-uk-345678901234',
-        marketing_consent: true,
-        consent_at: new Date(Date.now() - 30 * 86400000).toISOString(),
-        opted_out_at: null,
-        referred_by_customer_id: null,
-        created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
-      },
-      {
-        id: crypto.randomUUID(),
-        name: 'Charlotte Brown',
-        phone: '+447700900104',
-        personal_token: 'token-charlotte-brown-uk-4567890123456',
-        marketing_consent: true,
-        consent_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-        opted_out_at: null,
-        referred_by_customer_id: null,
-        created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-      },
-      {
-        id: crypto.randomUUID(),
-        name: 'Harry Wilson',
-        phone: '+447700900105',
-        personal_token: 'token-harry-wilson-uk-56789012345',
-        marketing_consent: false,
-        consent_at: new Date(Date.now() - 15 * 86400000).toISOString(),
-        opted_out_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-        referred_by_customer_id: null,
-        created_at: new Date(Date.now() - 15 * 86400000).toISOString(),
-      },
-    ];
-
-    const oliverId = database.customers[2].id;
-    const charlotteId = database.customers[3].id;
-    const harryId = database.customers[4].id;
-
-    database.sales = [
-      {
-        id: saleAId,
-        customer_id: custAId,
-        receipt_ref: 'REC-26-001',
-        bill_amount: 6000,
-        discount_amount: 0,
-        credit_used: 0,
-        referral_code_id: null,
-        staff_id: cashierId,
-        created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
-      },
-      {
-        id: saleBId,
-        customer_id: custBId,
-        receipt_ref: 'REC-26-002',
-        bill_amount: 6000,
-        discount_amount: 500,
-        credit_used: 0,
-        referral_code_id: codeAId,
-        staff_id: cashierId,
-        created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-      },
-    ];
-
-    database.referral_codes = [
-      {
-        id: codeAId,
-        code: codeA,
-        owner_customer_id: custAId,
-        status: 'used',
-        used_by_customer_id: custBId,
-        used_sale_id: saleBId,
-        used_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-        issued_sale_id: saleAId,
-        referrer_return_amount: 1200,
-        return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
-      },
-      {
-        id: crypto.randomUUID(),
-        code: codeB,
-        owner_customer_id: custBId,
-        status: 'unused',
-        used_by_customer_id: null,
-        used_sale_id: null,
-        used_at: null,
-        issued_sale_id: saleBId,
-        referrer_return_amount: 1200,
-        return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
-      },
-      {
-        id: crypto.randomUUID(),
-        code: 'OLI333',
-        owner_customer_id: oliverId,
-        status: 'unused',
-        used_by_customer_id: null,
-        used_sale_id: null,
-        used_at: null,
-        referrer_return_amount: 1200,
-        return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
-      },
-      {
-        id: crypto.randomUUID(),
-        code: 'CHA444',
-        owner_customer_id: charlotteId,
-        status: 'unused',
-        used_by_customer_id: null,
-        used_sale_id: null,
-        used_at: null,
-        referrer_return_amount: 1200,
-        return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
-      },
-      {
-        id: crypto.randomUUID(),
-        code: 'HAR555',
-        owner_customer_id: harryId,
-        status: 'unused',
-        used_by_customer_id: null,
-        used_sale_id: null,
-        used_at: null,
-        referrer_return_amount: 1200,
-        return_settings_snapshot: { a_return_type: 'percent', a_return_value: 20 },
-      },
-    ];
-
-    const expiryDate = new Date(Date.now() + 87 * 86400000).toISOString();
-    database.credits = [
-      {
-        id: crypto.randomUUID(),
-        customer_id: custAId,
-        source_sale_id: saleBId,
-        amount: 1200,
-        remaining: 1200,
-        status: 'active',
-        expires_at: expiryDate,
-        source: 'referral_return',
-        settings_snapshot: { expiry_days: 90 },
-        reason: "Referral return from Sophie Taylor's first purchase",
-        created_by_staff_id: cashierId,
-        created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-      },
-      {
-        id: crypto.randomUUID(),
-        customer_id: custBId,
-        source_sale_id: saleBId,
-        amount: 600,
-        remaining: 600,
-        status: 'active',
-        expires_at: expiryDate,
-        source: 'friend_credit',
-        settings_snapshot: { expiry_days: 90 },
-        reason: "Friend store credit using Emma Smith's referral code",
-        created_by_staff_id: cashierId,
-        created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-      },
-      {
-        id: crypto.randomUUID(),
-        customer_id: oliverId,
-        source_sale_id: null,
-        amount: 1000,
-        remaining: 1000,
-        status: 'active',
-        expires_at: new Date(Date.now() + 60 * 86400000).toISOString(),
-        source: 'manual',
-        settings_snapshot: { expiry_days: 90 },
-        reason: 'Loyalty bonus',
-        created_by_staff_id: ownerId,
-        created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
-      },
-    ];
-
+    database.customers = [];
+    database.referral_codes = [];
+    database.sales = [];
+    database.credits = [];
     database.credit_redemptions = [];
     database.messages = [];
     database.otp_codes = [];
@@ -318,52 +117,24 @@ export class AuthService {
         kind,
         body: cfg.defaultEn,
         updated_at: new Date().toISOString(),
-        updated_by: 'Demo Owner (Owner)',
+        updated_by: 'Owner',
       });
     }
 
-    database.audit_log = [
-      {
-        id: crypto.randomUUID(),
-        staff_id: 'system',
-        action: 'system_initialized',
-        details: { shop_name: 'Demo Salon', owner: 'Demo Owner' },
-        created_at: new Date().toISOString(),
-      },
-    ];
+    database.audit_log = [];
   }
 
-  // Never wipe data on startup. Seed demo data ONLY when database has no staff and no customers at all.
   public static initSeedData(forceRegenerate = false) {
     const snapshot = db.getSnapshot();
     const isBrandNew = snapshot.staff.length === 0 && snapshot.customers.length === 0;
 
     if (forceRegenerate || isBrandNew) {
-      console.log('[Seed] Initializing brand-new database with RefFrnd demo data...');
+      console.log('[Seed] Initializing brand-new database with RefFrnd seed data...');
       db.transaction((database) => {
         this.populateSeed(database);
         return true;
       });
       console.log('[Seed] Database successfully initialized!');
-    } else {
-      if (
-        snapshot.staff.some(
-          (s) =>
-            s.name.includes('Sangam Bazaar') ||
-            s.name.includes('Vivek Udasi') ||
-            s.name.includes('Raigarh')
-        )
-      ) {
-        console.warn(
-          '[Seed Warning] Old-format data detected in database. Preserving existing data without overwriting.'
-        );
-      }
     }
-  }
-
-  public static createInMemoryTestDb(): DatabaseSchema {
-    const testDb = getDefaultDatabaseSchema();
-    this.populateSeed(testDb);
-    return testDb;
   }
 }

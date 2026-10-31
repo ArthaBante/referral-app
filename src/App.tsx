@@ -78,7 +78,7 @@ export default function App() {
         )}
 
         {currentTab === 'owner' && (
-          <OwnerPortal onViewCustomerPortal={handleViewCustomerPortal} />
+          <OwnerPortal onViewCustomerPortal={handleViewCustomerPortal} setCurrentUser={setCurrentUser} />
         )}
 
         {currentTab === 'customer' && (

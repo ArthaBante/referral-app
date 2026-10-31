@@ -112,8 +112,8 @@ export class ApiClient {
     reason?: string;
     code?: string;
     ownerName?: string;
-    friendCreditPounds?: number;
-    promisedReturnPounds?: number;
+    friendDiscountPounds?: number;
+    referrerRewardPounds?: number;
   }> {
     return this.request('/cashier/validate-referral', {
       method: 'POST',
@@ -273,7 +273,6 @@ export class ApiClient {
   public static async updateMessageTemplate(payload: {
     kind: string;
     body: string;
-    dlt_template_id?: string | null;
   }): Promise<{ success: boolean; template: MessageTemplateItem }> {
     return this.request('/owner/message-templates', {
       method: 'POST',

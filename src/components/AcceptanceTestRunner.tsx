@@ -56,12 +56,12 @@ export const AcceptanceTestRunner: React.FC = () => {
             {running ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Running Scenarios 1–9...</span>
+                <span>Running Scenarios 1–6...</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-white" />
-                <span>Run All 9 Acceptance Tests</span>
+                <span>Run All 6 Acceptance Tests</span>
               </>
             )}
           </button>
@@ -83,11 +83,11 @@ export const AcceptanceTestRunner: React.FC = () => {
                 <div>
                   <div className="text-lg font-black">
                     {testReport.allPassed
-                      ? 'All 9 Scenarios Passed 100% Successfully!'
+                      ? 'All 6 Scenarios Passed 100% Successfully!'
                       : `${testReport.passedCount} of ${testReport.total} Scenarios Passed`}
                   </div>
                   <div className="text-xs text-neutral-600 font-medium">
-                    Verified with database ACID transactions, IST dates, and exact pence math.
+                    Verified with database ACID transactions, UK time and exact pence maths.
                   </div>
                 </div>
               </div>

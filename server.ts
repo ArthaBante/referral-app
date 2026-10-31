@@ -22,25 +22,50 @@ async function startServer() {
   // API router
   app.use('/api', apiRouter);
 
-  // Scheduled job: Run daily job on startup and schedule every hour check for 09:00 IST
-  // 09:00 IST is 03:30 UTC
-  setInterval(() => {
+  // Scheduled job: Run daily job on startup and check every minute for 09:00 Europe/London time
+  function checkAndRunDailyJob() {
     try {
       const now = new Date();
-      // UTC hours + 5.5 = IST
-      const istMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + 330;
-      const istHour = Math.floor((istMinutes % 1440) / 60);
-      const istMin = (istMinutes % 1440) % 60;
-      if (istHour === 9 && istMin === 0) {
-        console.log('[Schedule] Triggering 09:00 IST daily job...');
+      const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      const parts = formatter.formatToParts(now);
+      const partMap: Record<string, string> = {};
+      for (const p of parts) {
+        partMap[p.type] = p.value;
+      }
+      const year = partMap['year'];
+      const month = partMap['month'];
+      const day = partMap['day'];
+      const hour = parseInt(partMap['hour'] || '0', 10);
+      const minute = parseInt(partMap['minute'] || '0', 10);
+
+      const todayDateStr = `${year}-${month}-${day}`;
+      const isAfterOrAt9 = hour > 9 || (hour === 9 && minute >= 0);
+
+      if (isAfterOrAt9) {
         db.transaction((database) => {
-          BusinessService.runDailyJob(database);
+          const lastRun = database.settings.last_daily_job_run_date;
+          if (lastRun !== todayDateStr) {
+            console.log(`[Schedule] Running 09:00 UK daily job for ${todayDateStr} (London time ${hour}:${minute})...`);
+            BusinessService.runDailyJob(database);
+            database.settings.last_daily_job_run_date = todayDateStr;
+          }
         });
       }
     } catch (err) {
       console.error('[Schedule Error]', err);
     }
-  }, 60000);
+  }
+
+  checkAndRunDailyJob();
+  setInterval(checkAndRunDailyJob, 60000);
 
   // Vite integration
   const isProduction = process.env.NODE_ENV === 'production';

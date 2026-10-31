@@ -48,7 +48,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
             </div>
             <div>
               <h3 className="font-bold text-lg text-amber-200">Staff Portal Login</h3>
-              <p className="text-xs text-rose-200">Raigarh Counter & Admin Access</p>
+              <p className="text-xs text-rose-200">Staff login</p>
             </div>
           </div>
           <button

@@ -163,9 +163,10 @@ export class MessagingService {
     }
 
     let templateKind: MessageTemplateKind;
-    if (kind === 'welcome') {
-      // If welcoming a customer who used a code, we can distinguish or use welcome_with_code if friend_discount was saved/applied
-      templateKind = data.friend_discount ? 'welcome_with_code' : 'welcome_no_code';
+    if (kind === 'welcome_with_code') {
+      templateKind = 'welcome_with_code';
+    } else if (kind === 'welcome_no_code' || kind === 'welcome') {
+      templateKind = 'welcome_no_code';
     } else if (kind === 'referral_return') {
       templateKind = 'referral_return';
     } else if (kind === 'credit_expiring') {

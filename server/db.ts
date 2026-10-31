@@ -65,7 +65,7 @@ export interface CreditRedemption {
 export interface MessageRecord {
   id: string;
   customer_id: string;
-  kind: 'welcome' | 'referral_return' | 'credit_expiring' | 'credit_used' | 'otp' | 'offer';
+  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'credit_used' | 'otp' | 'offer';
   channel: 'dev' | 'sms' | 'whatsapp';
   body: string;
   status: 'sent' | 'failed';

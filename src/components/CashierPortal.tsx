@@ -46,8 +46,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [referralValid, setReferralValid] = useState<boolean | null>(null);
   const [referralReason, setReferralReason] = useState<string | null>(null);
   const [referralOwnerName, setReferralOwnerName] = useState<string | null>(null);
-  const [friendCreditPounds, setFriendCreditPounds] = useState(0);
-  const [promisedReturnPounds, setPromisedReturnPounds] = useState(0);
+  const [friendDiscountPounds, setFriendDiscountPounds] = useState(0);
+  const [referrerRewardPounds, setReferrerRewardPounds] = useState(0);
 
   // Credit Usage state
   const [wantUseCredit, setWantUseCredit] = useState(false);
@@ -154,8 +154,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       setReferralValid(res.valid);
       setReferralReason(res.reason || null);
       setReferralOwnerName(res.ownerName || null);
-      setFriendCreditPounds(res.friendCreditPounds || 0);
-      setPromisedReturnPounds(res.promisedReturnPounds || 0);
+      setFriendDiscountPounds(res.friendDiscountPounds || 0);
+      setReferrerRewardPounds(res.referrerRewardPounds || 0);
     } catch (err: any) {
       setReferralValid(false);
       setReferralReason(err.message);
@@ -262,8 +262,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     setReferralValid(null);
     setReferralReason(null);
     setReferralOwnerName(null);
-    setFriendCreditPounds(0);
-    setPromisedReturnPounds(0);
+    setFriendDiscountPounds(0);
+    setReferrerRewardPounds(0);
     setWantUseCredit(false);
     setCreditAuthVerified(false);
     setRedemptionToken(null);
@@ -300,7 +300,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-rose-950 tracking-tight">Billing Counter</h1>
-            <p className="text-xs text-neutral-500">Record sale, issue store credit & redeem balance</p>
+            <p className="text-xs text-neutral-500">Record sales, apply referral codes and redeem credit</p>
           </div>
         </div>
 
@@ -346,10 +346,14 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-neutral-50 p-4 rounded-xl mb-4 border border-neutral-200 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-neutral-50 p-4 rounded-xl mb-4 border border-neutral-200 text-center">
             <div>
               <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Bill Total</div>
               <div className="text-lg font-bold text-neutral-900">£{saleSavedResult.billAmountPounds.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-blue-600 font-semibold">Discount</div>
+              <div className="text-lg font-bold text-blue-700">£{(saleSavedResult.discountAmountPounds || 0).toFixed(2)}</div>
             </div>
             <div>
               <div className="text-[11px] uppercase tracking-wider text-amber-600 font-semibold">Credit Redeemed</div>
@@ -361,21 +365,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           </div>
 
-          {saleSavedResult.friendCreditPounds > 0 && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-3 flex items-center gap-2 text-xs text-emerald-900">
-              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>
-                <strong>£{saleSavedResult.friendCreditPounds.toFixed(2)} store credit</strong> added to customer's account for their next visit!
-              </span>
-            </div>
-          )}
-
-          {saleSavedResult.referrerName && (
+          {saleSavedResult.referrerName && saleSavedResult.referrerReturnPounds > 0 && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-center gap-2 text-xs text-amber-900">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                Referrer <strong>{saleSavedResult.referrerName}</strong> earned{' '}
-                <strong>£{saleSavedResult.referrerReturnPounds.toFixed(2)} return back</strong> added to their account!
+                {saleSavedResult.referrerName} gets <strong>£{saleSavedResult.referrerReturnPounds.toFixed(2)}</strong> added to their account.
               </span>
             </div>
           )}
@@ -590,7 +584,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                         <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 font-semibold space-y-1">
                           <div className="flex items-center gap-1.5 font-bold">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Code valid. No discount today. {customerName ? `${customerName} gets` : 'Customer gets'} £{friendCreditPounds.toFixed(2)} store credit for next visit. {referralOwnerName || 'Referrer'} gets £{promisedReturnPounds.toFixed(2)} back.</span>
+                            <span>Code valid. Take £{friendDiscountPounds.toFixed(2)} off at the till. {referralOwnerName || 'Referrer'} gets £{referrerRewardPounds.toFixed(2)} back.</span>
                           </div>
                         </div>
                       )}
@@ -802,7 +796,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
               ) : (
                 <>
                   <Receipt className="w-5 h-5 text-amber-300" />
-                  <span>Save Sale & Issue Store Credit</span>
+                  <span>Save Sale</span>
                 </>
               )}
             </button>
