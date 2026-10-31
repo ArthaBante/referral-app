@@ -270,20 +270,21 @@ describe('RefFrnd Acceptance Tests', () => {
   });
 
   it('Scenario j: friend_discount £25 with min_spend £20 -> rejected', () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    testDb.settings.min_spend = 20;
-    let rejected = false;
+    let errorMsg = '';
     try {
-      const friend_discount = 25;
-      const min_spend = testDb.settings.min_spend;
-      if (friend_discount >= min_spend) {
-        throw new Error('Friend discount must be less than minimum spend.');
-      }
+      BusinessService.validateSettings({
+        friend_discount: 25,
+        referrer_reward: 5,
+        min_spend: 20,
+        expiry_days: 90,
+        reminder_days_before: 7,
+        max_credit_share: 50,
+        shop_name: 'Test Shop',
+      });
     } catch (err: any) {
-      rejected = true;
+      errorMsg = err.message;
     }
-    expect(rejected).toBe(true);
+    expect(errorMsg).toBe('Friend discount must be less than minimum spend.');
   });
 
   it('Scenario k: A redeems credit after a real OTP -> credit used is capped at 50% of the bill', () => {
@@ -355,6 +356,20 @@ describe('RefFrnd Acceptance Tests', () => {
       }, staffId);
     } catch (err: any) {
       rejected = err.message.includes('already exists');
+    }
+    expect(rejected).toBe(true);
+  });
+
+  it('Scenario m: validateSettings with friend_discount "abc" throws', () => {
+    let rejected = false;
+    try {
+      BusinessService.validateSettings({
+        friend_discount: 'abc',
+        referrer_reward: 5,
+        min_spend: 20,
+      });
+    } catch (err: any) {
+      rejected = true;
     }
     expect(rejected).toBe(true);
   });

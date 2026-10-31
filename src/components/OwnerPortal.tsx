@@ -27,19 +27,18 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-const SAMPLE_PREVIEW_DATA: Record<string, string> = {
-  shop: 'Demo Salon',
+const getSamplePreviewData = (shopName?: string): Record<string, string> => ({
+  shop: shopName || 'Your Business',
   name: 'Emma',
-  b_reward: '10%',
-  a_amount: '£12.00',
-  credit: '£6.00',
-  amount: '£12.00',
+  amount: '£5.00',
   expiry: '15 Jan',
-  used: '£10.00',
+  used: '£5.00',
   balance: '£5.00',
   otp: '482913',
   link: 'ref-frnd.uk/c/abc123',
-};
+  friend_discount: '£5.00',
+  referrer_reward: '£5.00',
+});
 
 const TEMPLATE_KINDS_ORDER: MessageTemplateKind[] = [
   'welcome_no_code',
@@ -92,9 +91,10 @@ const TEMPLATE_META: Record<
   },
 };
 
-function renderPreviewText(body: string): string {
+function renderPreviewText(body: string, shopName?: string): string {
+  const data = getSamplePreviewData(shopName);
   return (body || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
-    return SAMPLE_PREVIEW_DATA[key] !== undefined ? SAMPLE_PREVIEW_DATA[key] : match;
+    return data[key] !== undefined ? data[key] : match;
   });
 }
 
@@ -104,19 +104,19 @@ interface OwnerPortalProps {
   onViewCustomerPortal: (token: string) => void;
   setCurrentUser?: (user: StaffUser | null) => void;
   onSettingsUpdated?: (newShopName: string) => void;
+  onOpenLogin?: () => void;
 }
 
 export const OwnerPortal: React.FC<OwnerPortalProps> = ({
   onViewCustomerPortal,
   setCurrentUser,
   onSettingsUpdated,
+  onOpenLogin,
 }) => {
   const [subTab, setSubTab] = useState<'dashboard' | 'settings' | 'customers' | 'offers' | 'staff' | 'messages' | 'audit'>('dashboard');
 
   const [dashboard, setDashboard] = useState<OwnerDashboardData | null>(null);
   const [dateFilter, setDateFilter] = useState<'all' | '30' | '90'>('all');
-  const [dailyJobRunning, setDailyJobRunning] = useState(false);
-  const [dailyJobMessage, setDailyJobMessage] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -154,119 +154,116 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
   const [auditLogs, setAuditLogs] = useState<AuditItem[]>([]);
 
-  async function withOwnerAuth<T>(fn: () => Promise<T>): Promise<T | undefined> {
-    try {
-      return await fn();
-    } catch (err: any) {
-      if (
-        err.message.includes('Authentication required') ||
-        err.message.includes('Owner') ||
-        err.message.includes('401') ||
-        err.message.includes('403')
-      ) {
-        try {
-          const res = await ApiClient.login('owner', 'change-me');
-          if (setCurrentUser) setCurrentUser(res.staff);
-          return await fn();
-        } catch (loginErr) {
-          console.error('Owner auto-login failed', loginErr);
-        }
-      }
-      throw err;
+  const handleAuthError = (err: any) => {
+    const msg = err?.message || '';
+    if (
+      msg.includes('Authentication required') ||
+      msg.includes('Owner') ||
+      msg.includes('401') ||
+      msg.includes('403') ||
+      msg.includes('Access denied') ||
+      msg.includes('Not authenticated') ||
+      msg.includes('Invalid credentials')
+    ) {
+      ApiClient.clearSession();
+      if (setCurrentUser) setCurrentUser(null);
+      if (onOpenLogin) onOpenLogin();
+      return true;
     }
-  }
+    return false;
+  };
 
   const loadDashboard = async () => {
     try {
-      await withOwnerAuth(async () => {
-        let from: string | undefined;
-        if (dateFilter === '30') {
-          from = new Date(Date.now() - 30 * 86400000).toISOString();
-        } else if (dateFilter === '90') {
-          from = new Date(Date.now() - 90 * 86400000).toISOString();
-        }
-        const data = await ApiClient.getDashboard(from);
-        setDashboard(data);
-      });
+      let from: string | undefined;
+      if (dateFilter === '30') {
+        from = new Date(Date.now() - 30 * 86400000).toISOString();
+      } else if (dateFilter === '90') {
+        from = new Date(Date.now() - 90 * 86400000).toISOString();
+      }
+      const data = await ApiClient.getDashboard(from);
+      setDashboard(data);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
   const loadSettings = async () => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getSettings();
-        setSettings(data);
-      });
+      const data = await ApiClient.getSettings();
+      setSettings(data);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
   const loadCustomers = async () => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getCustomers(customerSearch);
-        setCustomers(data.customers);
-      });
+      const data = await ApiClient.getCustomers(customerSearch);
+      setCustomers(data.customers);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
   const loadCustomerDetail = async (id: string) => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getCustomerDetails(id);
-        setSelectedCustomerDetail(data);
-      });
+      const data = await ApiClient.getCustomerDetails(id);
+      setSelectedCustomerDetail(data);
     } catch (err: any) {
-      alert(`Error loading customer: ${err.message}`);
+      if (!handleAuthError(err)) {
+        alert(`Error loading customer: ${err.message}`);
+      }
     }
   };
 
   const loadOffersAudience = async () => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getOfferAudience();
-        setAudienceCount(data.eligibleCount);
-      });
+      const data = await ApiClient.getOfferAudience();
+      setAudienceCount(data.eligibleCount);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
   const loadStaff = async () => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getStaff();
-        setStaffList(data.staff);
-      });
+      const data = await ApiClient.getStaff();
+      setStaffList(data.staff);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
   const loadMessages = async () => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getMessages();
-        setMessages(data.messages);
-      });
+      const data = await ApiClient.getMessages();
+      setMessages(data.messages);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
   const loadAudit = async () => {
     try {
-      await withOwnerAuth(async () => {
-        const data = await ApiClient.getAuditLog();
-        setAuditLogs(data.auditLog);
-      });
+      const data = await ApiClient.getAuditLog();
+      setAuditLogs(data.auditLog);
     } catch (err: any) {
-      console.error(err);
+      if (!handleAuthError(err)) {
+        console.error(err);
+      }
     }
   };
 
@@ -458,19 +455,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
     return `If Sophie uses Emma's code and spends £40: Sophie pays £${paid}, Emma gets £${rr} back.`;
   };
 
-  const handleRunDailyJob = async () => {
-    setDailyJobRunning(true);
-    setDailyJobMessage(null);
-    try {
-      const res = await ApiClient.runDailyJob();
-      setDailyJobMessage(`Daily job finished: ${res.expired} expired, ${res.remindersSent} reminders sent.`);
-      loadDashboard();
-    } catch (err: any) {
-      alert(`Job failed: ${err.message}`);
-    } finally {
-      setDailyJobRunning(false);
-    }
-  };
+
 
   const handleCreditAdjustment = async () => {
     if (!selectedCustomerId || !adjAmount || !adjReason.trim()) {
@@ -624,22 +609,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={handleRunDailyJob}
-              disabled={dailyJobRunning}
-              className="py-1.5 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-rose-950 font-black text-xs shadow-xs transition flex items-center gap-1.5 self-start sm:self-auto"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${dailyJobRunning ? 'animate-spin' : ''}`} />
-              <span>{dailyJobRunning ? 'Executing 09:00 Job...' : 'Run 09:00 UK Daily Job Now'}</span>
-            </button>
           </div>
-
-          {dailyJobMessage && (
-            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 font-semibold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>{dailyJobMessage}</span>
-            </div>
-          )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
@@ -675,7 +645,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
               <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
-                <span className="text-[11px] font-bold text-amber-800 block">Returns Paid to Referrers</span>
+                <span className="text-[11px] font-bold text-amber-800 block">Rewards Paid to Referrers</span>
                 <span className="text-xl font-black text-amber-950 mt-0.5 block">£{dashboard.returnsPaidPounds.toFixed(2)}</span>
                 <span className="text-[10px] text-neutral-500">Gross earned by referrers</span>
               </div>
@@ -930,10 +900,10 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                         Ledger
                       </button>
                       <button
-                        onClick={() => onViewCustomerPortal(c.personalToken)}
+                        onClick={() => window.open(`/customer/${c.personalToken}`, '_blank')}
                         className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg font-bold text-xs"
                       >
-                        Pass
+                        View customer page
                       </button>
                     </td>
                   </tr>
@@ -1194,7 +1164,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                     const config = templateConfigs[kind];
                     const edit = templateEdits[kind] || { body: '' };
                     const status = templateStatus[kind] || {};
-                    const preview = renderPreviewText(edit.body);
+                    const preview = renderPreviewText(edit.body, settings?.shop_name);
                     const charCount = preview.length;
 
                     return (

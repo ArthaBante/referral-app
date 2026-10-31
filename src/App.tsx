@@ -84,6 +84,7 @@ export default function App() {
             onViewCustomerPortal={handleViewCustomerPortal}
             setCurrentUser={setCurrentUser}
             onSettingsUpdated={(newShopName: string) => setShopName(newShopName)}
+            onOpenLogin={() => setAuthModalOpen(true)}
           />
         )}
       </main>

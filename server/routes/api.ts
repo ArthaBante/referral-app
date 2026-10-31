@@ -442,60 +442,21 @@ apiRouter.get('/owner/settings', requireOwner, (req: Request, res: Response) => 
 apiRouter.post('/owner/settings', requireOwner, (req: Request, res: Response) => {
   try {
     const session = (req as any).session as UserSession;
-    const body = req.body;
-
-    const friend_discount = Number(body.friend_discount);
-    if (isNaN(friend_discount) || friend_discount < 1) {
-      return res.status(400).json({ error: 'Friend discount must be at least £1.' });
-    }
-
-    const referrer_reward = Number(body.referrer_reward);
-    if (isNaN(referrer_reward) || referrer_reward < 1) {
-      return res.status(400).json({ error: 'Referrer reward must be at least £1.' });
-    }
-
-    const min_spend = Number(body.min_spend);
-    if (isNaN(min_spend) || min_spend < 1) {
-      return res.status(400).json({ error: 'Minimum spend must be at least £1.' });
-    }
-
-    if (friend_discount >= min_spend) {
-      return res.status(400).json({ error: 'Friend discount must be less than minimum spend.' });
-    }
-
-    const expiry_days = Number(body.expiry_days);
-    if (isNaN(expiry_days) || expiry_days < 7 || expiry_days > 365) {
-      return res.status(400).json({ error: 'Expiry days must be between 7 and 365.' });
-    }
-
-    const reminder_days_before = Number(body.reminder_days_before);
-    if (isNaN(reminder_days_before) || reminder_days_before < 0 || reminder_days_before > 30) {
-      return res.status(400).json({ error: 'Reminder days before expiry must be between 0 and 30.' });
-    }
-
-    const max_credit_share = Number(body.max_credit_share);
-    if (isNaN(max_credit_share) || max_credit_share < 1 || max_credit_share > 100) {
-      return res.status(400).json({ error: 'Max credit share must be between 1 and 100%.' });
-    }
-
-    const shop_name = (body.shop_name || '').trim();
-    if (!shop_name || shop_name.length > 60) {
-      return res.status(400).json({ error: 'Shop name is required and must be between 1 and 60 characters.' });
-    }
+    const validated = BusinessService.validateSettings(req.body);
 
     const updated = db.transaction((database) => {
       const oldSettings = { ...database.settings };
 
       database.settings = {
         ...database.settings,
-        scheme_enabled: typeof body.scheme_enabled === 'boolean' ? body.scheme_enabled : database.settings.scheme_enabled,
-        friend_discount,
-        referrer_reward,
-        min_spend,
-        expiry_days,
-        reminder_days_before,
-        max_credit_share,
-        shop_name,
+        scheme_enabled: validated.scheme_enabled !== undefined ? validated.scheme_enabled : database.settings.scheme_enabled,
+        friend_discount: validated.friend_discount,
+        referrer_reward: validated.referrer_reward,
+        min_spend: validated.min_spend,
+        expiry_days: validated.expiry_days,
+        reminder_days_before: validated.reminder_days_before,
+        max_credit_share: validated.max_credit_share,
+        shop_name: validated.shop_name || database.settings.shop_name,
         updated_at: new Date().toISOString(),
         updated_by: session.staff.name,
       };
@@ -1027,17 +988,6 @@ apiRouter.post('/owner/message-templates/reset', requireOwner, (req: Request, re
 apiRouter.get('/owner/audit-log', requireOwner, (req: Request, res: Response) => {
   const snapshot = db.getSnapshot();
   return res.json({ auditLog: snapshot.audit_log.slice(0, 100) });
-});
-
-apiRouter.post('/owner/run-daily-job', requireOwner, (req: Request, res: Response) => {
-  try {
-    const result = db.transaction((database) => {
-      return BusinessService.runDailyJob(database);
-    });
-    return res.json({ success: true, ...result });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
 });
 
 

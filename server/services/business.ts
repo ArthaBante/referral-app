@@ -88,6 +88,71 @@ export class BusinessService {
     }).format(d);
   }
 
+  public static validateSettings(input: any): {
+    scheme_enabled?: boolean;
+    friend_discount: number;
+    referrer_reward: number;
+    min_spend: number;
+    expiry_days: number;
+    reminder_days_before: number;
+    max_credit_share: number;
+    shop_name: string;
+  } {
+    if (!input || typeof input !== 'object') {
+      throw new Error('Invalid settings input.');
+    }
+
+    const friend_discount = Number(input.friend_discount);
+    if (isNaN(friend_discount) || friend_discount < 1) {
+      throw new Error('Friend discount must be at least £1.');
+    }
+
+    const referrer_reward = Number(input.referrer_reward);
+    if (isNaN(referrer_reward) || referrer_reward < 1) {
+      throw new Error('Referrer reward must be at least £1.');
+    }
+
+    const min_spend = Number(input.min_spend);
+    if (isNaN(min_spend) || min_spend < 1) {
+      throw new Error('Minimum spend must be at least £1.');
+    }
+
+    if (friend_discount >= min_spend) {
+      throw new Error('Friend discount must be less than minimum spend.');
+    }
+
+    const expiry_days = Number(input.expiry_days ?? 90);
+    if (isNaN(expiry_days) || expiry_days < 7 || expiry_days > 365) {
+      throw new Error('Expiry days must be between 7 and 365.');
+    }
+
+    const reminder_days_before = Number(input.reminder_days_before ?? 7);
+    if (isNaN(reminder_days_before) || reminder_days_before < 0 || reminder_days_before > 30) {
+      throw new Error('Reminder days before expiry must be between 0 and 30.');
+    }
+
+    const max_credit_share = Number(input.max_credit_share ?? 50);
+    if (isNaN(max_credit_share) || max_credit_share < 1 || max_credit_share > 100) {
+      throw new Error('Max credit share must be between 1 and 100%.');
+    }
+
+    const shop_name = input.shop_name !== undefined ? String(input.shop_name).trim() : 'Your Business';
+    if (input.shop_name !== undefined && (!shop_name || shop_name.length > 60)) {
+      throw new Error('Shop name is required and must be between 1 and 60 characters.');
+    }
+
+    return {
+      scheme_enabled: typeof input.scheme_enabled === 'boolean' ? input.scheme_enabled : undefined,
+      friend_discount,
+      referrer_reward,
+      min_spend,
+      expiry_days,
+      reminder_days_before,
+      max_credit_share,
+      shop_name: shop_name || 'Your Business',
+    };
+  }
+
   public static validateReferralCode(
     database: DatabaseSchema,
     codeStr: string,

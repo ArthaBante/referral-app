@@ -128,7 +128,6 @@ export class ApiClient {
 
   public static async requestOtp(customerId: string): Promise<{
     success: boolean;
-    devOtp?: string;
     expiresAt: string;
   }> {
     return this.request('/cashier/request-otp', {
@@ -296,9 +295,5 @@ export class ApiClient {
 
   public static async getAuditLog(): Promise<{ auditLog: AuditItem[] }> {
     return this.request('/owner/audit-log');
-  }
-
-  public static async runDailyJob(): Promise<{ expired: number; remindersSent: number }> {
-    return this.request('/owner/run-daily-job', { method: 'POST' });
   }
 }
