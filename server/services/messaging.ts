@@ -12,6 +12,7 @@ export interface SendMessageParams {
     earned_points?: string | number;
     points_balance?: string | number;
     amount?: string | number;
+    code?: string | number;
     expiry?: string;
     customBody?: string;
     shop?: string;
@@ -75,6 +76,14 @@ export const TEMPLATE_CONFIG: Record<MessageTemplateKind, TemplateConfigDef> = {
     requiredPlaceholders: ['link'],
     supportedPlaceholders: ['shop', 'link'],
     defaultEn: ' Reply STOP or use {link} to stop offers.',
+  },
+  otp: {
+    kind: 'otp',
+    title: 'Customer Verification Code (OTP)',
+    description: 'Sent when the cashier requests a code to verify the customer before spending points.',
+    requiredPlaceholders: ['code'],
+    supportedPlaceholders: ['shop', 'code'],
+    defaultEn: '{shop}: Your code is {code}. Only share it with the cashier.',
   },
 };
 
@@ -165,6 +174,8 @@ export class MessagingService {
       templateKind = 'credit_expiring';
     } else if (kind === 'points_earned') {
       templateKind = 'points_earned';
+    } else if (kind === 'otp') {
+      templateKind = 'otp';
     } else {
       templateKind = 'welcome_no_code';
     }
@@ -180,6 +191,7 @@ export class MessagingService {
       earned_points: data.earned_points !== undefined ? String(data.earned_points) : '',
       points_balance: data.points_balance !== undefined ? String(data.points_balance) : '',
       amount: data.amount !== undefined ? String(data.amount) : '',
+      code: data.code !== undefined ? String(data.code) : '',
       expiry: data.expiry || '',
     };
 

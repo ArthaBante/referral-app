@@ -10,6 +10,8 @@ export interface SaveSaleInput {
   receiptRef?: string;
   billAmountPounds: number;
   referralCode?: string;
+  blocksToSpend?: number;
+  redemptionToken?: string;
 }
 
 export class BusinessService {
@@ -93,6 +95,9 @@ export class BusinessService {
     min_spend: number | null;
     referral_limit: number | null;
     reminder_days_before: number;
+    redeem_points: number;
+    redeem_pounds: number;
+    max_off_per_bill: number | null;
     shop_name: string;
   } {
     if (!input || typeof input !== 'object') {
@@ -107,6 +112,25 @@ export class BusinessService {
     const earn_points = Number(input.earn_points ?? 100);
     if (isNaN(earn_points) || earn_points < 1 || !Number.isInteger(earn_points)) {
       throw new Error('Earn points must be a whole number of at least 1.');
+    }
+
+    const redeem_points = Number(input.redeem_points ?? 1000);
+    if (isNaN(redeem_points) || redeem_points < 1 || !Number.isInteger(redeem_points)) {
+      throw new Error('Redeem points must be a whole number of at least 1.');
+    }
+
+    const redeem_pounds = Number(input.redeem_pounds ?? 5);
+    if (isNaN(redeem_pounds) || redeem_pounds < 1 || !Number.isInteger(redeem_pounds)) {
+      throw new Error('Redeem pounds must be a whole number of at least £1.');
+    }
+
+    let max_off_per_bill: number | null = null;
+    if (input.max_off_per_bill !== undefined && input.max_off_per_bill !== null && String(input.max_off_per_bill).trim() !== '' && String(input.max_off_per_bill).trim().toLowerCase() !== 'none') {
+      const maxOff = Number(input.max_off_per_bill);
+      if (isNaN(maxOff) || maxOff < 1 || !Number.isInteger(maxOff)) {
+        throw new Error('Maximum £ off per bill must be a positive whole number or empty.');
+      }
+      max_off_per_bill = maxOff;
     }
 
     const points_expiry_days = Number(input.points_expiry_days ?? input.expiry_days ?? 365);
@@ -127,7 +151,11 @@ export class BusinessService {
     }
 
     let min_spend: number | null = null;
-    if (input.min_spend !== undefined && input.min_spend !== null && String(input.min_spend).trim() !== '' && String(input.min_spend).trim().toLowerCase() !== 'none') {
+    if (input.min_spend === null || input.min_spend === 'none') {
+      min_spend = null;
+    } else if (input.min_spend === undefined || input.min_spend === '' || String(input.min_spend).trim() === '') {
+      throw new Error('Enter a minimum spend or tick No minimum');
+    } else {
       const ms = Number(input.min_spend);
       if (isNaN(ms) || ms < 1 || !Number.isInteger(ms)) {
         throw new Error('Minimum spend must be a whole number of at least £1.');
@@ -149,7 +177,7 @@ export class BusinessService {
       throw new Error('Reminder days before must be a whole number from 0 to 30.');
     }
 
-    if (input.shop_name === undefined || input.shop_name === null || typeof input.shop_name !== 'string') {
+    if (input.shop_name === undefined || input.shop_name === null || typeof input.shop_name !== 'string' || !input.shop_name.trim()) {
       throw new Error('Shop name is required.');
     }
     const shop_name = input.shop_name.trim();
@@ -168,6 +196,9 @@ export class BusinessService {
       min_spend,
       referral_limit,
       reminder_days_before,
+      redeem_points,
+      redeem_pounds,
+      max_off_per_bill,
       shop_name,
     };
   }
@@ -294,6 +325,10 @@ export class BusinessService {
     }
 
     const firstName = customer.name.split(' ')[0] || customer.name;
+    const redeemPoints = database.settings.redeem_points ?? 1000;
+    const redeemPounds = database.settings.redeem_pounds ?? 5;
+    const maxOffPerBill = database.settings.max_off_per_bill ?? null;
+    const usableBlocks = Math.floor(totalPoints / redeemPoints);
 
     return {
       shopName: database.settings.shop_name,
@@ -302,6 +337,10 @@ export class BusinessService {
       personalToken: customer.personal_token,
       personalQrDataUri,
       totalPoints,
+      usableBlocks,
+      redeemPoints,
+      redeemPounds,
+      maxOffPerBill,
       friendsReferred,
       earnSpendPounds: database.settings.earn_spend_pounds ?? 10,
       earnPoints: database.settings.earn_points ?? 100,
@@ -318,6 +357,138 @@ export class BusinessService {
         : null,
       marketingConsent: customer.marketing_consent && !customer.opted_out_at,
       optedOut: !!customer.opted_out_at,
+    };
+  }
+
+  public static sendOtpCode(database: DatabaseSchema, customerId: string): { success: boolean; message: string } {
+    const customer = database.customers.find((c) => c.id === customerId);
+    if (!customer) {
+      throw new Error('Customer not found.');
+    }
+
+    const code = String(crypto.randomInt(100000, 1000000));
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    for (const otp of database.otp_codes) {
+      if (otp.customer_id === customerId && !otp.used_at) {
+        otp.used_at = new Date().toISOString();
+      }
+    }
+
+    database.otp_codes.push({
+      id: crypto.randomUUID(),
+      customer_id: customerId,
+      code_hash: code,
+      code_plain: code,
+      expires_at: expiresAt,
+      attempts: 0,
+      used_at: null,
+      created_at: new Date().toISOString(),
+    });
+
+    messagingService.send(database, {
+      customerId,
+      kind: 'otp',
+      data: { code },
+    });
+
+    return {
+      success: true,
+      message: 'Verification code sent to customer mobile.',
+    };
+  }
+
+  public static verifyOtpCode(
+    database: DatabaseSchema,
+    customerId: string,
+    code: string
+  ): { success: boolean; redemptionToken: string; expiresAt: string } {
+    const customer = database.customers.find((c) => c.id === customerId);
+    if (!customer) {
+      throw new Error('Customer not found.');
+    }
+
+    const activeOtp = database.otp_codes
+      .filter((o) => o.customer_id === customerId && !o.used_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+    if (!activeOtp) {
+      throw new Error('Verification code has expired or is invalid. Please request a new code.');
+    }
+
+    if (new Date(activeOtp.expires_at) <= new Date()) {
+      throw new Error('Verification code has expired. Please request a new code.');
+    }
+
+    if (activeOtp.attempts >= 5) {
+      throw new Error('Code blocked due to too many incorrect attempts. Please request a new code.');
+    }
+
+    const cleanCode = code.trim();
+    if (activeOtp.code_plain !== cleanCode && activeOtp.code_hash !== cleanCode) {
+      activeOtp.attempts += 1;
+      if (activeOtp.attempts >= 5) {
+        throw new Error('Code blocked due to too many incorrect attempts. Please request a new code.');
+      }
+      const remaining = 5 - activeOtp.attempts;
+      throw new Error(`Incorrect verification code. Attempts remaining: ${remaining}`);
+    }
+
+    activeOtp.used_at = new Date().toISOString();
+
+    const redemptionToken = crypto.randomBytes(24).toString('hex');
+    const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    database.redemption_tokens.push({
+      id: crypto.randomUUID(),
+      customer_id: customerId,
+      token: redemptionToken,
+      expires_at: tokenExpiresAt,
+      used: false,
+      created_at: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      redemptionToken,
+      expiresAt: tokenExpiresAt,
+    };
+  }
+
+  public static confirmCustomerQr(
+    database: DatabaseSchema,
+    customerId: string,
+    qrData: string
+  ): { success: boolean; redemptionToken: string; expiresAt: string } {
+    const customer = database.customers.find((c) => c.id === customerId);
+    if (!customer) {
+      throw new Error('Customer not found.');
+    }
+
+    const tokenMatch = qrData.match(/\/customer\/([a-f0-9]+)/i);
+    const extractedToken = tokenMatch ? tokenMatch[1] : qrData.trim();
+
+    const scannedCustomer = database.customers.find((c) => c.personal_token === extractedToken);
+    if (!scannedCustomer || scannedCustomer.id !== customerId) {
+      throw new Error('QR code does not match customer being served.');
+    }
+
+    const redemptionToken = crypto.randomBytes(24).toString('hex');
+    const tokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    database.redemption_tokens.push({
+      id: crypto.randomUUID(),
+      customer_id: customerId,
+      token: redemptionToken,
+      expires_at: tokenExpiresAt,
+      used: false,
+      created_at: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      redemptionToken,
+      expiresAt: tokenExpiresAt,
     };
   }
 
@@ -408,13 +579,90 @@ export class BusinessService {
       throw new Error('Customer record could not be established.');
     }
 
+    const blocksToSpend = Number(input.blocksToSpend || 0);
+    const redemptionToken = input.redemptionToken;
+
+    let pointsSpent = 0;
+    let requestedDiscountPounds = 0;
+    let appliedDiscountPence = 0;
+    let finalPence = billAmountPence;
+
+    // Calculate existing points before this sale
+    const existingTotalPoints = this.getTotalPoints(database, customer.id);
+    const redeemPoints = database.settings.redeem_points || 1000;
+    const redeemPounds = database.settings.redeem_pounds || 5;
+    const maxOffPerBill = database.settings.max_off_per_bill;
+
+    if (blocksToSpend > 0) {
+      if (!Number.isInteger(blocksToSpend) || blocksToSpend < 0) {
+        throw new Error('Blocks to spend must be a non-negative whole number.');
+      }
+
+      if (!redemptionToken) {
+        throw new Error('Valid customer verification token required to spend points.');
+      }
+
+      const tokRow = database.redemption_tokens.find(
+        (t) => t.token === redemptionToken && t.customer_id === customer.id && !t.used && new Date(t.expires_at) > new Date()
+      );
+      if (!tokRow) {
+        throw new Error('Valid customer verification token required to spend points.');
+      }
+
+      const maxBlocksHold = Math.floor(existingTotalPoints / redeemPoints);
+      if (blocksToSpend > maxBlocksHold) {
+        throw new Error(`Cannot spend more blocks than available (${maxBlocksHold} blocks held).`);
+      }
+
+      requestedDiscountPounds = blocksToSpend * redeemPounds;
+      if (maxOffPerBill !== null && maxOffPerBill !== undefined && requestedDiscountPounds > maxOffPerBill) {
+        throw new Error(`Cannot exceed maximum discount of £${maxOffPerBill} per bill.`);
+      }
+
+      tokRow.used = true;
+
+      pointsSpent = blocksToSpend * redeemPoints;
+      const requestedDiscountPence = requestedDiscountPounds * 100;
+      appliedDiscountPence = Math.min(billAmountPence, requestedDiscountPence);
+      finalPence = Math.max(0, billAmountPence - appliedDiscountPence);
+
+      // Deduct points from active unexpired lots, oldest expiry first
+      const now = new Date();
+      const activeUnexpiredLots = database.credits
+        .filter((c) => c.customer_id === customer.id && c.remaining > 0 && (!c.expires_at || new Date(c.expires_at) > now))
+        .sort((a, b) => new Date(a.expires_at || '9999-12-31').getTime() - new Date(b.expires_at || '9999-12-31').getTime());
+
+      let needed = pointsSpent;
+      for (const lot of activeUnexpiredLots) {
+        if (needed <= 0) break;
+        const deduct = Math.min(lot.remaining, needed);
+        lot.remaining -= deduct;
+        needed -= deduct;
+      }
+
+      database.audit_log.unshift({
+        id: crypto.randomUUID(),
+        staff_id: staffId,
+        action: 'points_spent',
+        details: {
+          customerId: customer.id,
+          customerName: customer.name,
+          blocksSpent: blocksToSpend,
+          pointsSpent,
+          discountPounds: requestedDiscountPounds,
+        },
+        created_at: new Date().toISOString(),
+      });
+    }
+
     const saleId = crypto.randomUUID();
     const saleRecord: Sale = {
       id: saleId,
       customer_id: customer.id,
       receipt_ref: cleanReceiptRef,
       bill_amount: billAmountPence,
-      discount_amount: 0,
+      discount_amount: appliedDiscountPence,
+      points_spent: pointsSpent,
       referral_code_id: appliedReferralCodeRow ? appliedReferralCodeRow.id : null,
       staff_id: staffId,
       created_at: new Date().toISOString(),
@@ -424,7 +672,7 @@ export class BusinessService {
     const pointsExpiryDays = database.settings.points_expiry_days || 365;
     const expiresAt = new Date(Date.now() + pointsExpiryDays * 86400000).toISOString();
 
-    // 1. Purchase Points
+    // 1. Purchase Points earned on FULL bill before discount
     const earnedPoints = this.calculatePurchasePoints(
       Number(billAmountPounds),
       database.settings.earn_spend_pounds ?? 10,
@@ -551,7 +799,9 @@ export class BusinessService {
       isNewCustomer,
       receiptRef: cleanReceiptRef,
       billAmountPounds: this.penceToPounds(billAmountPence),
-      finalAmountPounds: this.penceToPounds(billAmountPence),
+      finalAmountPounds: this.penceToPounds(finalPence),
+      discountPounds: requestedDiscountPounds,
+      pointsSpent,
       referralCodeUsed: appliedReferralCodeRow?.code || null,
       friendPointsGiven: friendPointsEarned,
       referrerName: referrerCustomer?.name || null,

@@ -27,6 +27,10 @@ export interface CustomerPortalData {
   friendsReferred: number;
   earnSpendPounds: number;
   earnPoints: number;
+  redeemPoints: number;
+  redeemPounds: number;
+  maxOffPerBill: number | null;
+  usableBlocks: number;
   activeLots: Array<{
     id: string;
     points: number;
@@ -75,6 +79,9 @@ export interface SettingsData {
   min_spend: number | null;
   referral_limit: number | null;
   reminder_days_before: number;
+  redeem_points: number;
+  redeem_pounds: number;
+  max_off_per_bill: number | null;
   shop_name: string;
   updated_at: string;
   updated_by: string;
@@ -87,6 +94,9 @@ export interface SaleItem {
   customerPhone: string;
   receipt_ref: string | null;
   billAmountPounds: number;
+  discount_amount: number;
+  points_spent?: number;
+  discountPounds?: number;
   referral_code_id: string | null;
   staff_id: string;
   created_at: string;
@@ -118,7 +128,8 @@ export type MessageTemplateKind =
   | 'referral_return'
   | 'credit_expiring'
   | 'points_earned'
-  | 'offer_footer';
+  | 'offer_footer'
+  | 'otp';
 
 export interface MessageTemplateItem {
   id: string;

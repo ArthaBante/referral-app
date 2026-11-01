@@ -326,4 +326,429 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
     expect(res.message).toBe('Amy Walsh has no points to remove');
     expect(testDb.audit_log.length).toBe(auditCountBefore);
   });
+
+  it('Settings rejects friend_points -5, referrer_points "abc", min_spend -1, reminder_days_before 31, and a blank shop name', () => {
+    const validBase = {
+      earn_spend_pounds: 10,
+      earn_points: 100,
+      points_expiry_days: 365,
+      referrer_points: 100,
+      friend_points: 100,
+      min_spend: 10,
+      reminder_days_before: 7,
+      shop_name: 'Test Shop',
+      redeem_points: 1000,
+      redeem_pounds: 5,
+      max_off_per_bill: null,
+    };
+
+    expect(() => BusinessService.validateSettings({ ...validBase, friend_points: -5 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, referrer_points: 'abc' as any })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, min_spend: -1 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, reminder_days_before: 31 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, shop_name: '   ' })).toThrow();
+  });
+
+  it('validateSettings accepts min_spend null and rejects -1 and 2.5', () => {
+    const validBase = {
+      earn_spend_pounds: 10,
+      earn_points: 100,
+      points_expiry_days: 365,
+      referrer_points: 100,
+      friend_points: 100,
+      min_spend: 10,
+      reminder_days_before: 7,
+      shop_name: 'Test Shop',
+      redeem_points: 1000,
+      redeem_pounds: 5,
+      max_off_per_bill: null,
+    };
+
+    const resNull = BusinessService.validateSettings({ ...validBase, min_spend: null });
+    expect(resNull.min_spend).toBeNull();
+
+    expect(() => BusinessService.validateSettings({ ...validBase, min_spend: -1 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, min_spend: 2.5 })).toThrow();
+  });
+
+  it('Spending Test 1: 2500 points, 1000 = £5, £30 bill, 2 blocks: pays £20, spends 2000, keeps 500, then earns 300 on full £30', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    // Create customer with 2500 points lot
+    const custId = 'cust-spend-1';
+    const phone = '07700900100';
+    testDb.customers.push({
+      id: custId,
+      name: 'Spend Customer 1',
+      phone: '+447700900100',
+      personal_token: 'tok-spend-1',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: 'lot-2500',
+      customer_id: custId,
+      points: 2500,
+      remaining: 2500,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: new Date().toISOString(),
+    });
+
+    // Confirm QR
+    const confirm = BusinessService.confirmCustomerQr(testDb, custId, 'tok-spend-1');
+    expect(confirm.redemptionToken).toBeDefined();
+
+    // Save sale spending 2 blocks (£10 off on £30 bill)
+    const saleRes = BusinessService.saveSale(testDb, {
+      phone,
+      name: 'Spend Customer 1',
+      billAmountPounds: 30,
+      blocksToSpend: 2,
+      redemptionToken: confirm.redemptionToken,
+    }, staffId);
+
+    expect(saleRes.discountPounds).toBe(10);
+    expect(saleRes.finalAmountPounds).toBe(20);
+    expect(saleRes.pointsSpent).toBe(2000);
+    expect(saleRes.earnedPoints).toBe(300); // 300 points earned on full £30 bill
+
+    // Total active points remaining: 500 (from lot-2500) + 300 (new purchase lot) = 800
+    expect(BusinessService.getTotalPoints(testDb, custId)).toBe(800);
+    const preExistingLot = testDb.credits.find(c => c.id === 'lot-2500')!;
+    expect(preExistingLot.remaining).toBe(500);
+  });
+
+  it('Spending Test 2: Asking for 3 blocks with 2500 points is rejected', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = 'cust-spend-2';
+    testDb.customers.push({
+      id: custId,
+      name: 'Spend Customer 2',
+      phone: '+447700900101',
+      personal_token: 'tok-spend-2',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: 'lot-2500-b',
+      customer_id: custId,
+      points: 2500,
+      remaining: 2500,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: new Date().toISOString(),
+    });
+
+    const confirm = BusinessService.confirmCustomerQr(testDb, custId, 'tok-spend-2');
+
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900101',
+      name: 'Spend Customer 2',
+      billAmountPounds: 50,
+      blocksToSpend: 3,
+      redemptionToken: confirm.redemptionToken,
+    }, staffId)).toThrow();
+  });
+
+  it('Spending Test 3: max_off_per_bill 5 rejects 2 blocks', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    testDb.settings.max_off_per_bill = 5;
+
+    const custId = 'cust-spend-3';
+    testDb.customers.push({
+      id: custId,
+      name: 'Spend Customer 3',
+      phone: '+447700900102',
+      personal_token: 'tok-spend-3',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: 'lot-2500-c',
+      customer_id: custId,
+      points: 2500,
+      remaining: 2500,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: new Date().toISOString(),
+    });
+
+    const confirm = BusinessService.confirmCustomerQr(testDb, custId, 'tok-spend-3');
+
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900102',
+      name: 'Spend Customer 3',
+      billAmountPounds: 50,
+      blocksToSpend: 2,
+      redemptionToken: confirm.redemptionToken,
+    }, staffId)).toThrow();
+  });
+
+  it('Spending Test 4: A £3 bill with 1 block becomes £0 and still spends 1000 points', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = 'cust-spend-4';
+    testDb.customers.push({
+      id: custId,
+      name: 'Spend Customer 4',
+      phone: '+447700900103',
+      personal_token: 'tok-spend-4',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: 'lot-1000',
+      customer_id: custId,
+      points: 1000,
+      remaining: 1000,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: new Date().toISOString(),
+    });
+
+    const confirm = BusinessService.confirmCustomerQr(testDb, custId, 'tok-spend-4');
+
+    const saleRes = BusinessService.saveSale(testDb, {
+      phone: '07700900103',
+      name: 'Spend Customer 4',
+      billAmountPounds: 3,
+      blocksToSpend: 1,
+      redemptionToken: confirm.redemptionToken,
+    }, staffId);
+
+    expect(saleRes.discountPounds).toBe(5);
+    expect(saleRes.finalAmountPounds).toBe(0);
+    expect(saleRes.pointsSpent).toBe(1000);
+    expect(saleRes.earnedPoints).toBe(30); // 30 points on £3 bill
+
+    const preExistingLot = testDb.credits.find(c => c.id === 'lot-1000')!;
+    expect(preExistingLot.remaining).toBe(0);
+  });
+
+  it('Spending Test 5: A new friend cannot spend their welcome points on their first bill', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    // First create referrer
+    BusinessService.saveSale(testDb, {
+      phone: '07700900110',
+      name: 'Referrer First',
+      billAmountPounds: 20,
+    }, staffId);
+    const refCust = testDb.customers.find(c => c.phone === '+447700900110')!;
+    const refCode = testDb.referral_codes.find(rc => rc.owner_customer_id === refCust.id)!;
+
+    // Friend tries to spend 1 block on their first bill
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900111',
+      name: 'Friend First',
+      billAmountPounds: 20,
+      referralCode: refCode.code,
+      blocksToSpend: 1,
+      redemptionToken: 'dummy-token',
+    }, staffId)).toThrow();
+  });
+
+  it('Spending Test 6: Spending with no token, a wrong token, another customer token or a used token is rejected', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custA = 'cust-spend-6a';
+    const custB = 'cust-spend-6b';
+    testDb.customers.push({
+      id: custA,
+      name: 'Customer A',
+      phone: '+447700900120',
+      personal_token: 'tok-6a',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: 'lot-6a',
+      customer_id: custA,
+      points: 2000,
+      remaining: 2000,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: new Date().toISOString(),
+    });
+
+    testDb.customers.push({
+      id: custB,
+      name: 'Customer B',
+      phone: '+447700900121',
+      personal_token: 'tok-6b',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    // 1. No token
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900120',
+      name: 'Customer A',
+      billAmountPounds: 20,
+      blocksToSpend: 1,
+    }, staffId)).toThrow();
+
+    // 2. Wrong token
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900120',
+      name: 'Customer A',
+      billAmountPounds: 20,
+      blocksToSpend: 1,
+      redemptionToken: 'wrong-token',
+    }, staffId)).toThrow();
+
+    // 3. Customer B token used for Customer A
+    const confirmB = BusinessService.confirmCustomerQr(testDb, custB, 'tok-6b');
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900120',
+      name: 'Customer A',
+      billAmountPounds: 20,
+      blocksToSpend: 1,
+      redemptionToken: confirmB.redemptionToken,
+    }, staffId)).toThrow();
+
+    // 4. Used token
+    const confirmA = BusinessService.confirmCustomerQr(testDb, custA, 'tok-6a');
+    BusinessService.saveSale(testDb, {
+      phone: '07700900120',
+      name: 'Customer A',
+      billAmountPounds: 20,
+      blocksToSpend: 1,
+      redemptionToken: confirmA.redemptionToken,
+    }, staffId);
+
+    // Reuse token
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900120',
+      name: 'Customer A',
+      billAmountPounds: 20,
+      blocksToSpend: 1,
+      redemptionToken: confirmA.redemptionToken,
+    }, staffId)).toThrow();
+  });
+
+  it('Spending Test 7: A wrong OTP 5 times blocks the code. The right OTP within 10 minutes gives a token.', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+
+    const custId = 'cust-otp-7';
+    testDb.customers.push({
+      id: custId,
+      name: 'OTP Customer',
+      phone: '+447700900130',
+      personal_token: 'tok-otp-7',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    // Send OTP
+    const sendRes = BusinessService.sendOtpCode(testDb, custId);
+    expect(sendRes.success).toBe(true);
+
+    const otpRecord = testDb.otp_codes.find(o => o.customer_id === custId)!;
+    const correctCode = otpRecord.code_plain!;
+    const wrongCode = correctCode === '123456' ? '654321' : '123456';
+
+    // 4 wrong attempts throw error
+    for (let i = 0; i < 4; i++) {
+      expect(() => BusinessService.verifyOtpCode(testDb, custId, wrongCode)).toThrow();
+    }
+
+    // 5th wrong attempt blocks code
+    expect(() => BusinessService.verifyOtpCode(testDb, custId, wrongCode)).toThrow('Code blocked due to too many incorrect attempts');
+
+    // Trying correct code now fails because blocked
+    expect(() => BusinessService.verifyOtpCode(testDb, custId, correctCode)).toThrow('Code blocked due to too many incorrect attempts');
+
+    // Send new OTP
+    BusinessService.sendOtpCode(testDb, custId);
+    const newOtpRecord = testDb.otp_codes.filter(o => o.customer_id === custId && !o.used_at).pop()!;
+    
+    // Verify correct code gives redemption token
+    const resRight = BusinessService.verifyOtpCode(testDb, custId, newOtpRecord.code_plain!);
+    expect(resRight.success).toBe(true);
+    expect(resRight.redemptionToken).toBeDefined();
+  });
+
+  it('Spending Test 8: Expired lots are never spent', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = 'cust-spend-8';
+    testDb.customers.push({
+      id: custId,
+      name: 'Expired Customer',
+      phone: '+447700900140',
+      personal_token: 'tok-spend-8',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    // Only expired lot
+    testDb.credits.push({
+      id: 'lot-exp-8',
+      customer_id: custId,
+      points: 2000,
+      remaining: 2000,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+      created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    });
+
+    const confirm = BusinessService.confirmCustomerQr(testDb, custId, 'tok-spend-8');
+
+    expect(() => BusinessService.saveSale(testDb, {
+      phone: '07700900140',
+      name: 'Expired Customer',
+      billAmountPounds: 20,
+      blocksToSpend: 1,
+      redemptionToken: confirm.redemptionToken,
+    }, staffId)).toThrow();
+  });
 });

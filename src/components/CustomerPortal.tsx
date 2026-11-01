@@ -105,6 +105,12 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               <span className="text-xs font-semibold text-amber-200 block mt-2">
                 Every £{data.earnSpendPounds ?? 10} spent = {data.earnPoints ?? 100} points
               </span>
+              <div className="mt-2 pt-2 border-t border-white/10 text-xs text-rose-100 font-medium">
+                <div>{data.redeemPoints ?? 1000} points = £{data.redeemPounds ?? 5} off</div>
+                <div className="text-amber-300 font-bold mt-0.5">
+                  You can use {data.usableBlocks ?? Math.floor(data.totalPoints / (data.redeemPoints || 1000))} {(data.usableBlocks ?? Math.floor(data.totalPoints / (data.redeemPoints || 1000))) === 1 ? 'block' : 'blocks'} now
+                </div>
+              </div>
             </div>
 
             {data.activeLots && data.activeLots.length > 0 && (

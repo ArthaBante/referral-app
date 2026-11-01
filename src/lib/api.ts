@@ -106,10 +106,37 @@ export class ApiClient {
     formattedPhone: string;
     customerId?: string;
     name?: string;
+    personalToken?: string;
     totalPoints?: number;
+    usableBlocks?: number;
+    maxDiscountPounds?: number;
+    redeemPoints?: number;
+    redeemPounds?: number;
+    maxOffPerBill?: number | null;
     marketingConsent?: boolean;
   }> {
     return this.request(`/cashier/lookup-customer?phone=${encodeURIComponent(phone)}`);
+  }
+
+  public static async sendOtp(customerId: string): Promise<{ success: boolean; message: string }> {
+    return this.request('/cashier/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ customerId }),
+    });
+  }
+
+  public static async verifyOtp(customerId: string, code: string): Promise<{ success: boolean; redemptionToken: string; expiresAt: string }> {
+    return this.request('/cashier/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ customerId, code }),
+    });
+  }
+
+  public static async confirmQr(customerId: string, qrData: string): Promise<{ success: boolean; redemptionToken: string; expiresAt: string }> {
+    return this.request('/cashier/confirm-qr', {
+      method: 'POST',
+      body: JSON.stringify({ customerId, qrData }),
+    });
   }
 
   public static async validateReferral(code: string, buyerPhone: string, billAmountPounds?: number): Promise<{
@@ -134,6 +161,8 @@ export class ApiClient {
     receiptRef?: string;
     billAmountPounds: number;
     referralCode?: string;
+    blocksToSpend?: number;
+    redemptionToken?: string;
   }): Promise<any> {
     return this.request('/cashier/save-sale', {
       method: 'POST',

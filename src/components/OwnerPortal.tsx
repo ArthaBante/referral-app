@@ -36,6 +36,7 @@ const getSamplePreviewData = (shopName?: string): Record<string, string> => ({
   friend_points: '100',
   referrer_points: '100',
   min_spend: '10',
+  code: '482910',
   expiry: '15 Jan',
   link: 'ref-frnd.uk/c/abc123',
 });
@@ -47,6 +48,7 @@ const TEMPLATE_KINDS_ORDER: MessageTemplateKind[] = [
   'credit_expiring',
   'points_earned',
   'offer_footer',
+  'otp',
 ];
 
 const TEMPLATE_META: Record<
@@ -82,6 +84,11 @@ const TEMPLATE_META: Record<
     number: 6,
     title: 'Offer footer',
     note: 'The line added to the end of every offer (the offer itself is still written by the owner each time on the Send offer screen).',
+  },
+  otp: {
+    number: 7,
+    title: 'Customer verification code (OTP)',
+    note: 'Sent when the cashier requests a code to verify the customer before spending points.',
   },
 };
 
@@ -441,15 +448,32 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
     }
   };
 
+  const [minSpendInput, setMinSpendInput] = useState<string>('10');
+  const [isNoMinSpend, setIsNoMinSpend] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (settings) {
+      if (settings.min_spend === null) {
+        setIsNoMinSpend(true);
+        setMinSpendInput('');
+      } else {
+        setIsNoMinSpend(false);
+        setMinSpendInput(String(settings.min_spend));
+      }
+    }
+  }, [settings?.updated_at]);
+
   const calculateLiveExample = () => {
     if (!settings) return '';
     const fp = settings.friend_points ?? 100;
     const rp = settings.referrer_points ?? 100;
     const ms = settings.min_spend;
-    if (ms !== null && ms !== undefined) {
-      return `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie spends at least £${ms}.`;
-    }
-    return `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie shops.`;
+    const redeemPts = settings.redeem_points ?? 1000;
+    const redeemPds = settings.redeem_pounds ?? 5;
+    const referPart = ms !== null && ms !== undefined
+      ? `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie spends at least £${ms}.`
+      : `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie shops.`;
+    return `${referPart} Emma can swap ${redeemPts} points for £${redeemPds} off.`;
   };
 
   const handlePointsAdjustment = async () => {
@@ -733,6 +757,47 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             </div>
           </div>
 
+          <div className="p-4 bg-neutral-50 border border-neutral-200 rounded-xl space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-rose-950">Points Redemption Rate</h3>
+            <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-800">
+              <span>Every</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={settings.redeem_points ?? 1000}
+                onChange={(e) => setSettings({ ...settings, redeem_points: parseInt(e.target.value) || 0 })}
+                className="w-24 p-2 rounded-lg border border-neutral-300 font-black text-rose-950 bg-white text-center"
+              />
+              <span>points = £</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={settings.redeem_pounds ?? 5}
+                onChange={(e) => setSettings({ ...settings, redeem_pounds: parseInt(e.target.value) || 0 })}
+                className="w-20 p-2 rounded-lg border border-neutral-300 font-black text-rose-950 bg-white text-center"
+              />
+              <span>off</span>
+            </div>
+            <div className="pt-2 border-t border-neutral-200/60">
+              <label className="block text-xs font-bold text-neutral-700 mb-1">
+                Max £ off per bill (blank = no limit)
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="No limit"
+                value={settings.max_off_per_bill ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSettings({ ...settings, max_off_per_bill: val === '' ? null : parseInt(val) || null });
+                }}
+                className="w-36 p-2 rounded-lg border border-neutral-300 font-bold text-rose-950 bg-white"
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
               <label className="block text-xs font-black uppercase tracking-wider text-amber-950">
@@ -770,12 +835,15 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 <label className="flex items-center gap-1.5 text-xs text-neutral-600 font-semibold cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={settings.min_spend === null}
+                    checked={isNoMinSpend}
                     onChange={(e) => {
-                      if (e.target.checked) {
+                      const checked = e.target.checked;
+                      setIsNoMinSpend(checked);
+                      if (checked) {
                         setSettings({ ...settings, min_spend: null });
                       } else {
-                        setSettings({ ...settings, min_spend: 10 });
+                        const val = minSpendInput && minSpendInput.trim() !== '' ? parseFloat(minSpendInput) : 10;
+                        setSettings({ ...settings, min_spend: val });
                       }
                     }}
                     className="rounded border-neutral-300 text-rose-900 focus:ring-rose-900"
@@ -787,14 +855,15 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
               <input
                 type="number"
                 min="1"
-                disabled={settings.min_spend === null}
-                value={settings.min_spend ?? ''}
+                disabled={isNoMinSpend}
+                value={isNoMinSpend ? '' : minSpendInput}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setSettings({ ...settings, min_spend: val === '' ? null : parseFloat(val) });
+                  setMinSpendInput(val);
+                  setSettings({ ...settings, min_spend: val === '' ? ('' as any) : parseFloat(val) });
                 }}
                 className={`w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none ${
-                  settings.min_spend === null ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-white text-neutral-900'
+                  isNoMinSpend ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-white text-neutral-900'
                 }`}
               />
             </div>

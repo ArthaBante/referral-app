@@ -148,15 +148,74 @@ apiRouter.get('/cashier/lookup-customer', requireStaff, (req: Request, res: Resp
     }
 
     const totalPoints = BusinessService.getTotalPoints(snapshot, customer.id);
+    const redeemPoints = snapshot.settings.redeem_points || 1000;
+    const redeemPounds = snapshot.settings.redeem_pounds || 5;
+    const maxOffPerBill = snapshot.settings.max_off_per_bill;
+
+    const usableBlocksByPoints = Math.floor(totalPoints / redeemPoints);
+    const maxBlocksByBill = maxOffPerBill ? Math.floor(maxOffPerBill / redeemPounds) : Infinity;
+    const usableBlocks = Math.min(usableBlocksByPoints, maxBlocksByBill);
+    const maxDiscountPounds = usableBlocks * redeemPounds;
 
     return res.json({
       exists: true,
       customerId: customer.id,
       name: customer.name,
       formattedPhone: BusinessService.formatUkPhone(customer.phone),
+      personalToken: customer.personal_token,
       totalPoints,
+      usableBlocks,
+      maxDiscountPounds,
+      redeemPoints,
+      redeemPounds,
+      maxOffPerBill,
       marketingConsent: customer.marketing_consent && !customer.opted_out_at,
     });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/cashier/send-otp', requireStaff, (req: Request, res: Response) => {
+  try {
+    const { customerId } = req.body;
+    if (!customerId) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
+    const result = db.transaction((database) => {
+      return BusinessService.sendOtpCode(database, customerId);
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/cashier/verify-otp', requireStaff, (req: Request, res: Response) => {
+  try {
+    const { customerId, code } = req.body;
+    if (!customerId || !code) {
+      return res.status(400).json({ error: 'Customer ID and code are required' });
+    }
+    const result = db.transaction((database) => {
+      return BusinessService.verifyOtpCode(database, customerId, code);
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/cashier/confirm-qr', requireStaff, (req: Request, res: Response) => {
+  try {
+    const { customerId, qrData } = req.body;
+    if (!customerId || !qrData) {
+      return res.status(400).json({ error: 'Customer ID and QR code data are required' });
+    }
+    const result = db.transaction((database) => {
+      return BusinessService.confirmCustomerQr(database, customerId, qrData);
+    });
+    return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
@@ -196,7 +255,6 @@ apiRouter.post('/cashier/validate-referral', requireStaff, (req: Request, res: R
   }
 });
 
-
 apiRouter.post('/cashier/save-sale', requireStaff, (req: Request, res: Response) => {
   try {
     const staffSession = (req as any).session as UserSession;
@@ -221,6 +279,9 @@ apiRouter.get('/cashier/find-sale', requireStaff, (req: Request, res: Response) 
         customerName: customer?.name || 'Unknown',
         customerPhone: customer ? BusinessService.formatUkPhone(customer.phone) : '',
         billAmountPounds: BusinessService.penceToPounds(s.bill_amount),
+        discount_amount: s.discount_amount || 0,
+        discountPounds: BusinessService.penceToPounds(s.discount_amount || 0),
+        points_spent: s.points_spent || 0,
       };
     });
 

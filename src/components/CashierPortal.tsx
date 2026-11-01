@@ -38,7 +38,21 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [totalPoints, setTotalPoints] = useState(0);
+  const [usableBlocks, setUsableBlocks] = useState(0);
+  const [maxDiscountPounds, setMaxDiscountPounds] = useState(0);
+  const [redeemPoints, setRedeemPoints] = useState(1000);
+  const [redeemPounds, setRedeemPounds] = useState(5);
+  const [maxOffPerBill, setMaxOffPerBill] = useState<number | null>(null);
   const [marketingConsent, setMarketingConsent] = useState(false);
+
+  // Points redemption confirmation state
+  const [confirmStep, setConfirmStep] = useState<'unconfirmed' | 'otp_sent' | 'confirmed'>('unconfirmed');
+  const [otpInput, setOtpInput] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [redemptionToken, setRedemptionToken] = useState<string | null>(null);
+  const [blocksToSpend, setBlocksToSpend] = useState(0);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // Referral Code state
   const [showReferralInput, setShowReferralInput] = useState(false);
@@ -76,20 +90,76 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
         setCustomerId(res.customerId || null);
         setCustomerName(res.name || '');
         setTotalPoints(res.totalPoints || 0);
+        setUsableBlocks(res.usableBlocks || 0);
+        setMaxDiscountPounds(res.maxDiscountPounds || 0);
+        setRedeemPoints(res.redeemPoints || 1000);
+        setRedeemPounds(res.redeemPounds || 5);
+        setMaxOffPerBill(res.maxOffPerBill ?? null);
         setMarketingConsent(Boolean(res.marketingConsent));
         setShowReferralInput(false);
         setReferralCodeInput('');
         setReferralValid(null);
+        setConfirmStep('unconfirmed');
+        setRedemptionToken(null);
+        setBlocksToSpend(0);
+        setOtpInput('');
+        setOtpError(null);
       } else {
         setCustomerId(null);
         setCustomerName('');
         setTotalPoints(0);
+        setUsableBlocks(0);
+        setMaxDiscountPounds(0);
         setMarketingConsent(false);
       }
     } catch (err: any) {
       setErrorMsg(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    if (!customerId) return;
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      await ApiClient.sendOtp(customerId);
+      setConfirmStep('otp_sent');
+    } catch (err: any) {
+      setOtpError(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!customerId || !otpInput.trim()) return;
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      const res = await ApiClient.verifyOtp(customerId, otpInput.trim());
+      setRedemptionToken(res.redemptionToken);
+      setConfirmStep('confirmed');
+    } catch (err: any) {
+      setOtpError(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleQrScan = async (scannedValue: string) => {
+    if (!customerId) return;
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      const res = await ApiClient.confirmQr(customerId, scannedValue);
+      setRedemptionToken(res.redemptionToken);
+      setConfirmStep('confirmed');
+    } catch (err: any) {
+      setOtpError(err.message);
+    } finally {
+      setOtpLoading(false);
     }
   };
 
@@ -142,6 +212,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
         receiptRef: receiptRef.trim() ? receiptRef.trim() : undefined,
         billAmountPounds: billNum,
         referralCode: referralValid ? referralCodeInput.trim() : undefined,
+        blocksToSpend: blocksToSpend > 0 ? blocksToSpend : undefined,
+        redemptionToken: blocksToSpend > 0 ? (redemptionToken || undefined) : undefined,
       });
 
       setSaleSavedResult(res);
@@ -159,6 +231,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     setCustomerId(null);
     setCustomerName('');
     setTotalPoints(0);
+    setUsableBlocks(0);
+    setMaxDiscountPounds(0);
     setMarketingConsent(false);
     setShowReferralInput(false);
     setReferralCodeInput('');
@@ -171,6 +245,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     setReceiptRef('');
     setErrorMsg(null);
     setSaleSavedResult(null);
+    setConfirmStep('unconfirmed');
+    setRedemptionToken(null);
+    setBlocksToSpend(0);
+    setOtpInput('');
+    setOtpError(null);
   };
 
   const handleSearchSales = async () => {
@@ -187,6 +266,14 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
+      <QrScannerModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        onScan={handleQrScan}
+        title="Scan Customer Personal QR"
+        placeholder="Paste or scan customer personal QR link / token..."
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2">
           <div className="p-2 bg-rose-900 text-amber-300 rounded-xl">
@@ -194,7 +281,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-rose-950 tracking-tight">Billing Counter</h1>
-            <p className="text-xs text-neutral-500">Record sales and apply referral codes</p>
+            <p className="text-xs text-neutral-500">Record sales, spend points and apply referral codes</p>
           </div>
         </div>
 
@@ -251,6 +338,15 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           </div>
 
+          {saleSavedResult.pointsSpent > 0 && (
+            <div className="p-3.5 bg-amber-100 border-2 border-amber-400 rounded-xl mb-3 flex items-center gap-2.5 text-sm text-amber-950 font-black">
+              <Sparkles className="w-5 h-5 text-amber-700 shrink-0" />
+              <span>
+                Used {saleSavedResult.pointsSpent} points (£{(saleSavedResult.discountPounds || 0).toFixed(2)} off) — new balance {saleSavedResult.totalPoints.toLocaleString()}
+              </span>
+            </div>
+          )}
+
           <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl mb-3 flex items-center gap-2.5 text-sm text-amber-950 font-black">
             <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
             <span>
@@ -296,7 +392,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={handleNextCustomer}
-              className="flex-1 py-3.5 px-6 rounded-xl bg-rose-900 hover:bg-rose-800 text-white font-black text-base shadow-lg transition flex items-center justify-center gap-2"
+              className="flex-1 py-3.5 px-6 rounded-xl bg-rose-900 hover:bg-rose-800 text-white font-black text-base shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>Next Customer</span>
               <ArrowRight className="w-5 h-5" />
@@ -466,7 +562,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             )}
 
             {phoneLookupDone && customerExists && (
-              <div className="mt-4 pt-4 border-t border-neutral-200 space-y-3 animate-in fade-in duration-150">
+              <div className="mt-4 pt-4 border-t border-neutral-200 space-y-4 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-base font-black text-rose-950">{customerName}</div>
@@ -477,8 +573,118 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                       Points Balance
                     </div>
                     <div className="text-2xl font-black text-amber-950">{totalPoints}</div>
+                    <div className="text-[11px] font-bold text-rose-900 mt-0.5">
+                      Can use up to {usableBlocks} {usableBlocks === 1 ? 'block' : 'blocks'} (£{maxDiscountPounds} off)
+                    </div>
                   </div>
                 </div>
+
+                {usableBlocks > 0 && (
+                  <div className="p-4 bg-amber-50/70 border-2 border-amber-300 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-amber-600" />
+                        <span>Use Points</span>
+                      </span>
+                      {confirmStep === 'confirmed' && (
+                        <span className="text-xs font-bold text-emerald-800 bg-emerald-100 py-1 px-2.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Customer Confirmed</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {confirmStep !== 'confirmed' ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-neutral-700 font-medium">
+                          Confirm customer identity to unlock points redemption:
+                        </p>
+                        {otpError && (
+                          <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-bold flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                            <span>{otpError}</span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowQrModal(true)}
+                            className="flex-1 py-2.5 px-4 bg-white hover:bg-neutral-50 border border-amber-300 text-amber-950 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                          >
+                            <QrCode className="w-4 h-4 text-rose-700" />
+                            <span>Scan Their QR</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleSendOtp}
+                            disabled={otpLoading}
+                            className="flex-1 py-2.5 px-4 bg-rose-900 hover:bg-rose-800 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition disabled:opacity-50 cursor-pointer"
+                          >
+                            <MessageSquare className="w-4 h-4 text-amber-300" />
+                            <span>Text a Code</span>
+                          </button>
+                        </div>
+
+                        {confirmStep === 'otp_sent' && (
+                          <div className="mt-3 p-3 bg-white border border-amber-200 rounded-xl space-y-2">
+                            <label className="block text-xs font-bold text-neutral-800">
+                              Enter 6-digit code sent to {phoneInput}:
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                maxLength={6}
+                                value={otpInput}
+                                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                                placeholder="123456"
+                                className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg font-mono font-bold tracking-widest text-lg outline-none text-center"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleVerifyOtp}
+                                disabled={otpLoading || otpInput.length < 6}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-xs disabled:opacity-50 cursor-pointer"
+                              >
+                                Verify
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-200">
+                          <span className="text-xs font-bold text-neutral-800">Blocks to spend:</span>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setBlocksToSpend(Math.max(0, blocksToSpend - 1))}
+                              disabled={blocksToSpend <= 0}
+                              className="w-8 h-8 rounded-lg bg-neutral-200 hover:bg-neutral-300 font-black text-neutral-800 flex items-center justify-center text-base disabled:opacity-30 cursor-pointer"
+                            >
+                              −
+                            </button>
+                            <span className="text-lg font-black text-rose-950 w-6 text-center">{blocksToSpend}</span>
+                            <button
+                              type="button"
+                              onClick={() => setBlocksToSpend(Math.min(usableBlocks, blocksToSpend + 1))}
+                              disabled={blocksToSpend >= usableBlocks}
+                              className="w-8 h-8 rounded-lg bg-rose-900 hover:bg-rose-800 font-black text-white flex items-center justify-center text-base disabled:opacity-30 cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="text-xs font-black text-amber-950 bg-amber-100/80 p-2.5 rounded-xl text-center border border-amber-300">
+                          {blocksToSpend} {blocksToSpend === 1 ? 'block' : 'blocks'}: {blocksToSpend * redeemPoints} points, £{blocksToSpend * redeemPounds} off. Customer pays £{Math.max(0, (parseFloat(billAmountInput) || 0) - blocksToSpend * redeemPounds).toFixed(2)}.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -564,7 +770,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                 type="button"
                 onClick={handleSearchSales}
                 disabled={searchLoading}
-                className="px-4 py-2.5 bg-rose-900 text-white rounded-xl text-xs font-bold hover:bg-rose-800"
+                className="px-4 py-2.5 bg-rose-900 text-white rounded-xl text-xs font-bold hover:bg-rose-800 cursor-pointer"
               >
                 Search
               </button>
@@ -598,8 +804,13 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-xs font-bold text-neutral-800">
-                    Bill Amount: £{sale.billAmountPounds.toFixed(2)}
+                  <div className="text-xs font-bold text-neutral-800 flex flex-wrap items-center gap-3">
+                    <span>Bill Amount: £{sale.billAmountPounds.toFixed(2)}</span>
+                    {sale.discountPounds && sale.discountPounds > 0 ? (
+                      <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        Discount: £{sale.discountPounds.toFixed(2)} ({sale.points_spent || 0} points used)
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               ))

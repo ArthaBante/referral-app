@@ -26,6 +26,7 @@ export interface Sale {
   receipt_ref: string | null;
   bill_amount: number; // pence
   discount_amount: number; // pence
+  points_spent?: number; // points
   referral_code_id: string | null;
   staff_id: string;
   created_at: string;
@@ -59,7 +60,7 @@ export interface ReferralUse {
 export interface MessageRecord {
   id: string;
   customer_id: string;
-  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'points_earned' | 'offer';
+  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'points_earned' | 'offer' | 'otp';
   channel: 'dev' | 'sms' | 'whatsapp';
   body: string;
   status: 'sent' | 'failed';
@@ -99,6 +100,9 @@ export interface Settings {
   min_spend?: number | null;
   referral_limit?: number | null;
   reminder_days_before?: number;
+  redeem_points?: number;      // default 1000
+  redeem_pounds?: number;      // default 5
+  max_off_per_bill?: number | null; // default null
   shop_name: string;
   updated_at: string;
   updated_by: string;
@@ -129,7 +133,8 @@ export type MessageTemplateKind =
   | 'referral_return'
   | 'credit_expiring'
   | 'points_earned'
-  | 'offer_footer';
+  | 'offer_footer'
+  | 'otp';
 
 export interface MessageTemplate {
   id: string;
@@ -179,6 +184,9 @@ export function getDefaultDatabaseSchema(): DatabaseSchema {
       min_spend: 10,
       referral_limit: null,
       reminder_days_before: 7,
+      redeem_points: 1000,
+      redeem_pounds: 5,
+      max_off_per_bill: null,
       shop_name: 'Your Business',
       updated_at: now,
       updated_by: 'system',
