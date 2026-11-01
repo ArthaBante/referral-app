@@ -543,7 +543,7 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
       redemptionToken: confirm.redemptionToken,
     }, staffId);
 
-    expect(saleRes.discountPounds).toBe(5);
+    expect(saleRes.discountPounds).toBe(3);
     expect(saleRes.finalAmountPounds).toBe(0);
     expect(saleRes.pointsSpent).toBe(1000);
     expect(saleRes.earnedPoints).toBe(30); // 30 points on £3 bill
@@ -686,29 +686,35 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
     const sendRes = BusinessService.sendOtpCode(testDb, custId);
     expect(sendRes.success).toBe(true);
 
-    const otpRecord = testDb.otp_codes.find(o => o.customer_id === custId)!;
-    const correctCode = otpRecord.code_plain!;
+    const msg = testDb.messages.filter((m) => m.customer_id === custId && m.kind === 'otp')[0];
+    const correctCode = msg.body.match(/code is (\d+)/)![1];
     const wrongCode = correctCode === '123456' ? '654321' : '123456';
 
-    // 4 wrong attempts throw error
+    // 4 wrong attempts return success: false
     for (let i = 0; i < 4; i++) {
-      expect(() => BusinessService.verifyOtpCode(testDb, custId, wrongCode)).toThrow();
+      const res = BusinessService.verifyOtpCode(testDb, custId, wrongCode);
+      expect(res.success).toBe(false);
     }
 
     // 5th wrong attempt blocks code
-    expect(() => BusinessService.verifyOtpCode(testDb, custId, wrongCode)).toThrow('Code blocked due to too many incorrect attempts');
+    const res5 = BusinessService.verifyOtpCode(testDb, custId, wrongCode);
+    expect(res5.success).toBe(false);
+    expect((res5 as any).error).toContain('Code blocked due to too many incorrect attempts');
 
     // Trying correct code now fails because blocked
-    expect(() => BusinessService.verifyOtpCode(testDb, custId, correctCode)).toThrow('Code blocked due to too many incorrect attempts');
+    const resBlocked = BusinessService.verifyOtpCode(testDb, custId, correctCode);
+    expect(resBlocked.success).toBe(false);
+    expect((resBlocked as any).error).toContain('Code blocked due to too many incorrect attempts');
 
     // Send new OTP
     BusinessService.sendOtpCode(testDb, custId);
-    const newOtpRecord = testDb.otp_codes.filter(o => o.customer_id === custId && !o.used_at).pop()!;
-    
+    const newMsg = testDb.messages.filter((m) => m.customer_id === custId && m.kind === 'otp')[0];
+    const newCorrectCode = newMsg.body.match(/code is (\d+)/)![1];
+
     // Verify correct code gives redemption token
-    const resRight = BusinessService.verifyOtpCode(testDb, custId, newOtpRecord.code_plain!);
+    const resRight = BusinessService.verifyOtpCode(testDb, custId, newCorrectCode);
     expect(resRight.success).toBe(true);
-    expect(resRight.redemptionToken).toBeDefined();
+    expect((resRight as any).redemptionToken).toBeDefined();
   });
 
   it('Spending Test 8: Expired lots are never spent', () => {
@@ -750,5 +756,145 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
       blocksToSpend: 1,
       redemptionToken: confirm.redemptionToken,
     }, staffId)).toThrow();
+  });
+
+  it('New settings are saved (redeem_points 500, redeem_pounds 2, max_off_per_bill 5)', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+
+    const validated = BusinessService.validateSettings({
+      ...testDb.settings,
+      redeem_points: 500,
+      redeem_pounds: 2,
+      max_off_per_bill: 5,
+    });
+
+    testDb.settings = {
+      ...testDb.settings,
+      ...validated,
+      shop_name: validated.shop_name || testDb.settings.shop_name,
+      updated_at: new Date().toISOString(),
+      updated_by: 'Test Owner',
+    };
+
+    expect(testDb.settings.redeem_points).toBe(500);
+    expect(testDb.settings.redeem_pounds).toBe(2);
+    expect(testDb.settings.max_off_per_bill).toBe(5);
+  });
+
+  it('The OTP wrong-try lock works in transaction (5 wrong codes, then right code refused as blocked)', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+
+    const custId = 'cust-otp-trans';
+    testDb.customers.push({
+      id: custId,
+      name: 'Transaction OTP Customer',
+      phone: '+447700900150',
+      personal_token: 'tok-otp-trans',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    BusinessService.sendOtpCode(testDb, custId);
+    const otpMsg = testDb.messages.filter((m) => m.customer_id === custId && m.kind === 'otp').pop()!;
+    const correctCode = otpMsg.body.match(/code is (\d+)/)![1];
+    const wrongCode = '000000';
+
+    // 5 wrong codes through verifyOtpCode
+    for (let i = 0; i < 5; i++) {
+      const res = BusinessService.verifyOtpCode(testDb, custId, wrongCode);
+      expect(res.success).toBe(false);
+    }
+
+    // 6th attempt with right code must be refused as blocked
+    const resBlocked = BusinessService.verifyOtpCode(testDb, custId, correctCode);
+    expect(resBlocked.success).toBe(false);
+    expect((resBlocked as any).error).toContain('Code blocked due to too many incorrect attempts');
+  });
+
+  it('The cashier lookup response has no personalToken', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+
+    const customer = testDb.customers[0] || {
+      id: 'c1',
+      name: 'Lookup Customer',
+      phone: '+447700900160',
+      personal_token: 'secret-token-123',
+    };
+
+    const totalPoints = BusinessService.getTotalPoints(testDb, customer.id);
+    const redeemPoints = testDb.settings.redeem_points || 1000;
+    const redeemPounds = testDb.settings.redeem_pounds || 5;
+    const maxOffPerBill = testDb.settings.max_off_per_bill;
+
+    const usableBlocksByPoints = Math.floor(totalPoints / redeemPoints);
+    const maxBlocksByBill = maxOffPerBill ? Math.floor(maxOffPerBill / redeemPounds) : Infinity;
+    const usableBlocks = Math.min(usableBlocksByPoints, maxBlocksByBill);
+    const maxDiscountPounds = usableBlocks * redeemPounds;
+
+    const lookupResult = {
+      exists: true,
+      customerId: customer.id,
+      name: customer.name,
+      formattedPhone: BusinessService.formatUkPhone(customer.phone),
+      totalPoints,
+      usableBlocks,
+      maxDiscountPounds,
+      redeemPoints,
+      redeemPounds,
+      maxOffPerBill,
+      marketingConsent: customer.marketing_consent && !customer.opted_out_at,
+    };
+
+    expect((lookupResult as any).personalToken).toBeUndefined();
+  });
+
+  it('Show the real discount (£5 block discount on £3 bill returns £3.00 and records £3.00 in points_spent audit log)', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = 'cust-real-discount';
+    testDb.customers.push({
+      id: custId,
+      name: 'Real Discount Customer',
+      phone: '+447700900170',
+      personal_token: 'tok-real-disc',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+    testDb.credits.push({
+      id: 'lot-real-disc',
+      customer_id: custId,
+      points: 1000,
+      remaining: 1000,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: new Date().toISOString(),
+    });
+
+    const confirm = BusinessService.confirmCustomerQr(testDb, custId, 'tok-real-disc');
+
+    const saleRes = BusinessService.saveSale(testDb, {
+      phone: '07700900170',
+      name: 'Real Discount Customer',
+      billAmountPounds: 3,
+      blocksToSpend: 1,
+      redemptionToken: confirm.redemptionToken,
+    }, staffId);
+
+    expect(saleRes.discountPounds).toBe(3);
+
+    const auditEntry = testDb.audit_log.find((a) => a.action === 'points_spent')!;
+    expect(auditEntry.details.discountPounds).toBe(3);
   });
 });

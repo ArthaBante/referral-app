@@ -162,7 +162,6 @@ apiRouter.get('/cashier/lookup-customer', requireStaff, (req: Request, res: Resp
       customerId: customer.id,
       name: customer.name,
       formattedPhone: BusinessService.formatUkPhone(customer.phone),
-      personalToken: customer.personal_token,
       totalPoints,
       usableBlocks,
       maxDiscountPounds,
@@ -200,6 +199,9 @@ apiRouter.post('/cashier/verify-otp', requireStaff, (req: Request, res: Response
     const result = db.transaction((database) => {
       return BusinessService.verifyOtpCode(database, customerId, code);
     });
+    if (!result.success) {
+      return res.status(400).json({ error: (result as any).error || (result as any).message });
+    }
     return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -411,16 +413,7 @@ apiRouter.post('/owner/settings', requireOwner, (req: Request, res: Response) =>
 
       database.settings = {
         ...database.settings,
-        scheme_enabled: validated.scheme_enabled !== undefined ? validated.scheme_enabled : database.settings.scheme_enabled,
-        earn_spend_pounds: validated.earn_spend_pounds,
-        earn_points: validated.earn_points,
-        points_expiry_days: validated.points_expiry_days,
-        points_earned_text: validated.points_earned_text,
-        referrer_points: validated.referrer_points,
-        friend_points: validated.friend_points,
-        min_spend: validated.min_spend,
-        referral_limit: validated.referral_limit,
-        reminder_days_before: validated.reminder_days_before,
+        ...validated,
         shop_name: validated.shop_name || database.settings.shop_name,
         updated_at: new Date().toISOString(),
         updated_by: session.staff.name,

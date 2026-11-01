@@ -106,7 +106,6 @@ export class ApiClient {
     formattedPhone: string;
     customerId?: string;
     name?: string;
-    personalToken?: string;
     totalPoints?: number;
     usableBlocks?: number;
     maxDiscountPounds?: number;

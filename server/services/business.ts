@@ -367,6 +367,7 @@ export class BusinessService {
     }
 
     const code = String(crypto.randomInt(100000, 1000000));
+    const code_hash = crypto.createHash('sha256').update(code).digest('hex');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     for (const otp of database.otp_codes) {
@@ -378,8 +379,7 @@ export class BusinessService {
     database.otp_codes.push({
       id: crypto.randomUUID(),
       customer_id: customerId,
-      code_hash: code,
-      code_plain: code,
+      code_hash,
       expires_at: expiresAt,
       attempts: 0,
       used_at: null,
@@ -402,10 +402,10 @@ export class BusinessService {
     database: DatabaseSchema,
     customerId: string,
     code: string
-  ): { success: boolean; redemptionToken: string; expiresAt: string } {
+  ): { success: true; redemptionToken: string; expiresAt: string } | { success: false; error: string; message: string } {
     const customer = database.customers.find((c) => c.id === customerId);
     if (!customer) {
-      throw new Error('Customer not found.');
+      return { success: false, error: 'Customer not found.', message: 'Customer not found.' };
     }
 
     const activeOtp = database.otp_codes
@@ -413,25 +413,32 @@ export class BusinessService {
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
     if (!activeOtp) {
-      throw new Error('Verification code has expired or is invalid. Please request a new code.');
+      const errMsg = 'Verification code has expired or is invalid. Please request a new code.';
+      return { success: false, error: errMsg, message: errMsg };
     }
 
     if (new Date(activeOtp.expires_at) <= new Date()) {
-      throw new Error('Verification code has expired. Please request a new code.');
+      const errMsg = 'Verification code has expired. Please request a new code.';
+      return { success: false, error: errMsg, message: errMsg };
     }
 
     if (activeOtp.attempts >= 5) {
-      throw new Error('Code blocked due to too many incorrect attempts. Please request a new code.');
+      const errMsg = 'Code blocked due to too many incorrect attempts. Please request a new code.';
+      return { success: false, error: errMsg, message: errMsg };
     }
 
     const cleanCode = code.trim();
-    if (activeOtp.code_plain !== cleanCode && activeOtp.code_hash !== cleanCode) {
+    const inputHash = crypto.createHash('sha256').update(cleanCode).digest('hex');
+
+    if (activeOtp.code_hash !== inputHash) {
       activeOtp.attempts += 1;
       if (activeOtp.attempts >= 5) {
-        throw new Error('Code blocked due to too many incorrect attempts. Please request a new code.');
+        const errMsg = 'Code blocked due to too many incorrect attempts. Please request a new code.';
+        return { success: false, error: errMsg, message: errMsg };
       }
       const remaining = 5 - activeOtp.attempts;
-      throw new Error(`Incorrect verification code. Attempts remaining: ${remaining}`);
+      const errMsg = `Incorrect verification code. Attempts remaining: ${remaining}`;
+      return { success: false, error: errMsg, message: errMsg };
     }
 
     activeOtp.used_at = new Date().toISOString();
@@ -626,6 +633,8 @@ export class BusinessService {
       appliedDiscountPence = Math.min(billAmountPence, requestedDiscountPence);
       finalPence = Math.max(0, billAmountPence - appliedDiscountPence);
 
+      const actualDiscountPounds = this.penceToPounds(appliedDiscountPence);
+
       // Deduct points from active unexpired lots, oldest expiry first
       const now = new Date();
       const activeUnexpiredLots = database.credits
@@ -649,7 +658,7 @@ export class BusinessService {
           customerName: customer.name,
           blocksSpent: blocksToSpend,
           pointsSpent,
-          discountPounds: requestedDiscountPounds,
+          discountPounds: actualDiscountPounds,
         },
         created_at: new Date().toISOString(),
       });
@@ -800,7 +809,7 @@ export class BusinessService {
       receiptRef: cleanReceiptRef,
       billAmountPounds: this.penceToPounds(billAmountPence),
       finalAmountPounds: this.penceToPounds(finalPence),
-      discountPounds: requestedDiscountPounds,
+      discountPounds: this.penceToPounds(appliedDiscountPence),
       pointsSpent,
       referralCodeUsed: appliedReferralCodeRow?.code || null,
       friendPointsGiven: friendPointsEarned,

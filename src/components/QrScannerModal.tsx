@@ -22,6 +22,35 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   const [useManual, setUseManual] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
+  const safeStopScanner = (scanner: Html5Qrcode | null) => {
+    if (!scanner) return;
+    try {
+      let isScanning = false;
+      try {
+        if (typeof scanner.getState === 'function') {
+          isScanning = scanner.getState() === 2; // Html5QrcodeScannerState.SCANNING is 2
+        } else {
+          isScanning = (scanner as any).isScanning === true;
+        }
+      } catch (_) {
+        isScanning = false;
+      }
+
+      if (isScanning) {
+        try {
+          scanner.stop().catch(() => {});
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Ignore stop errors
+    } finally {
+      try {
+        scanner.clear();
+      } catch (_) {}
+      scannerRef.current = null;
+    }
+  };
+
   useEffect(() => {
     if (!isOpen || useManual) return;
 
@@ -39,7 +68,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
           { fps: 10, qrbox: { width: 220, height: 220 } },
           (decodedText) => {
             if (isMounted) {
-              scanner.stop().catch(() => {});
+              safeStopScanner(scannerRef.current);
               onScan(decodedText);
               onClose();
             }
@@ -50,6 +79,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
         if (isMounted) {
           console.warn('Camera start error, switching to manual input:', err);
           setCameraError(err.message || 'Camera not accessible in this browser/device.');
+          safeStopScanner(scannerRef.current);
           setUseManual(true);
         }
       }
@@ -61,10 +91,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     return () => {
       isMounted = false;
       clearTimeout(timer);
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
+      safeStopScanner(scannerRef.current);
     };
   }, [isOpen, useManual]);
 
@@ -88,9 +115,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
           </div>
           <button
             onClick={() => {
-              if (scannerRef.current) {
-                scannerRef.current.stop().catch(() => {});
-              }
+              safeStopScanner(scannerRef.current);
               onClose();
             }}
             className="p-1 rounded-lg text-rose-300 hover:text-white hover:bg-rose-900 transition"
@@ -125,9 +150,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (scannerRef.current) {
-                    scannerRef.current.stop().catch(() => {});
-                  }
+                  safeStopScanner(scannerRef.current);
                   setUseManual(true);
                 }}
                 className="w-full py-2 px-3 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-xs font-bold text-neutral-700 flex items-center justify-center gap-1.5 transition"
