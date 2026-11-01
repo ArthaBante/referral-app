@@ -63,10 +63,13 @@ export class AuthService {
 
     database.settings = {
       scheme_enabled: true,
+      earn_spend_pounds: 10,
+      earn_points: 100,
+      points_expiry_days: 365,
+      points_earned_text: false,
       referrer_points: 100,
       friend_points: 50,
       min_spend: 10,
-      points_expiry_days: 365,
       referral_limit: null,
       reminder_days_before: 7,
       shop_name: 'Your Business',

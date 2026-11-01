@@ -251,6 +251,13 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           </div>
 
+          <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl mb-3 flex items-center gap-2.5 text-sm text-amber-950 font-black">
+            <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
+            <span>
+              {saleSavedResult.customerName} earns {saleSavedResult.earnedPoints} points — balance {saleSavedResult.totalPoints.toLocaleString()}
+            </span>
+          </div>
+
           {saleSavedResult.friendPointsGiven > 0 && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-2 flex items-center gap-2 text-xs text-emerald-900 font-bold">
               <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -262,7 +269,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-center gap-2 text-xs text-amber-900 font-bold">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                {saleSavedResult.referrerName} gets {saleSavedResult.referrerPointsGiven} points — she now has {saleSavedResult.referrerTotalPoints} points
+                {saleSavedResult.referrerName} gets {saleSavedResult.referrerPointsGiven} points — she now has {saleSavedResult.referrerTotalPoints.toLocaleString()} points
               </span>
             </div>
           )}

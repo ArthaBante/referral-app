@@ -84,10 +84,13 @@ export class BusinessService {
 
   public static validateSettings(input: any): {
     scheme_enabled?: boolean;
+    earn_spend_pounds: number;
+    earn_points: number;
+    points_expiry_days: number;
+    points_earned_text: boolean;
     referrer_points: number;
     friend_points: number;
     min_spend: number;
-    points_expiry_days: number;
     referral_limit: number | null;
     reminder_days_before: number;
     shop_name: string;
@@ -96,25 +99,26 @@ export class BusinessService {
       throw new Error('Invalid settings input.');
     }
 
-    const referrer_points = Number(input.referrer_points);
-    if (isNaN(referrer_points) || referrer_points < 1) {
-      throw new Error('Points for each new friend must be at least 1.');
+    const earn_spend_pounds = Number(input.earn_spend_pounds ?? 10);
+    if (isNaN(earn_spend_pounds) || earn_spend_pounds < 1 || !Number.isInteger(earn_spend_pounds)) {
+      throw new Error('Earn spend pounds must be a whole number of at least 1.');
     }
 
-    const friend_points = Number(input.friend_points);
-    if (isNaN(friend_points) || friend_points < 1) {
-      throw new Error('Welcome points must be at least 1.');
-    }
-
-    const min_spend = Number(input.min_spend);
-    if (isNaN(min_spend) || min_spend < 1) {
-      throw new Error('Minimum spend must be at least £1.');
+    const earn_points = Number(input.earn_points ?? 100);
+    if (isNaN(earn_points) || earn_points < 1 || !Number.isInteger(earn_points)) {
+      throw new Error('Earn points must be a whole number of at least 1.');
     }
 
     const points_expiry_days = Number(input.points_expiry_days ?? input.expiry_days ?? 365);
-    if (isNaN(points_expiry_days) || points_expiry_days < 1) {
-      throw new Error('Points expiry days must be at least 1.');
+    if (isNaN(points_expiry_days) || points_expiry_days < 1 || !Number.isInteger(points_expiry_days)) {
+      throw new Error('Points expiry days must be a whole number of at least 1.');
     }
+
+    const points_earned_text = Boolean(input.points_earned_text);
+
+    const referrer_points = Number(input.referrer_points ?? 100);
+    const friend_points = Number(input.friend_points ?? 50);
+    const min_spend = Number(input.min_spend ?? 10);
 
     let referral_limit: number | null = null;
     if (input.referral_limit !== undefined && input.referral_limit !== null && String(input.referral_limit).trim() !== '') {
@@ -126,25 +130,28 @@ export class BusinessService {
     }
 
     const reminder_days_before = Number(input.reminder_days_before ?? 7);
-    if (isNaN(reminder_days_before) || reminder_days_before < 0 || reminder_days_before > 30) {
-      throw new Error('Reminder days before expiry must be between 0 and 30.');
-    }
 
     const shop_name = input.shop_name !== undefined ? String(input.shop_name).trim() : 'Your Business';
-    if (input.shop_name !== undefined && (!shop_name || shop_name.length > 60)) {
-      throw new Error('Shop name is required and must be between 1 and 60 characters.');
-    }
 
     return {
       scheme_enabled: typeof input.scheme_enabled === 'boolean' ? input.scheme_enabled : undefined,
+      earn_spend_pounds,
+      earn_points,
+      points_expiry_days,
+      points_earned_text,
       referrer_points,
       friend_points,
       min_spend,
-      points_expiry_days,
       referral_limit,
       reminder_days_before,
       shop_name: shop_name || 'Your Business',
     };
+  }
+
+  public static calculatePurchasePoints(billAmountPounds: number, earnSpendPounds: number, earnPoints: number): number {
+    if (earnSpendPounds <= 0 || earnPoints <= 0) return 0;
+    const raw = (billAmountPounds * earnPoints) / earnSpendPounds;
+    return Math.floor(raw + 0.5);
   }
 
   public static validateReferralCode(
@@ -204,8 +211,8 @@ export class BusinessService {
       valid: true,
       referralCode,
       ownerCustomer,
-      friendPoints: database.settings.friend_points,
-      referrerPoints: database.settings.referrer_points,
+      friendPoints: database.settings.friend_points ?? 50,
+      referrerPoints: database.settings.referrer_points ?? 100,
     };
   }
 
@@ -251,9 +258,9 @@ export class BusinessService {
 
     let referralQrDataUri: string | null = null;
     let whatsappShareUrl: string = '';
-    const friendPoints = database.settings.friend_points;
-    const referrerPoints = database.settings.referrer_points;
-    const minSpendPounds = database.settings.min_spend;
+    const friendPoints = database.settings.friend_points ?? 50;
+    const referrerPoints = database.settings.referrer_points ?? 100;
+    const minSpendPounds = database.settings.min_spend ?? 10;
 
     if (referralCode) {
       referralQrDataUri = await QRCode.toDataURL(referralCode.code, { width: 240, margin: 2 });
@@ -271,6 +278,8 @@ export class BusinessService {
       personalQrDataUri,
       totalPoints,
       friendsReferred,
+      earnSpendPounds: database.settings.earn_spend_pounds ?? 10,
+      earnPoints: database.settings.earn_points ?? 100,
       activeLots,
       referralCode: referralCode
         ? {
@@ -390,13 +399,34 @@ export class BusinessService {
     const pointsExpiryDays = database.settings.points_expiry_days || 365;
     const expiresAt = new Date(Date.now() + pointsExpiryDays * 86400000).toISOString();
 
+    // 1. Purchase Points
+    const earnedPoints = this.calculatePurchasePoints(
+      Number(billAmountPounds),
+      database.settings.earn_spend_pounds ?? 10,
+      database.settings.earn_points ?? 100
+    );
+
+    if (earnedPoints > 0) {
+      database.credits.push({
+        id: crypto.randomUUID(),
+        customer_id: customer.id,
+        points: earnedPoints,
+        remaining: earnedPoints,
+        source: 'purchase',
+        source_sale_id: saleId,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    // 2. Referral Points
     let friendPointsEarned = 0;
     let referrerPointsEarned = 0;
     let referrerTotalPoints = 0;
 
     if (appliedReferralCodeRow && referrerCustomer) {
-      friendPointsEarned = database.settings.friend_points;
-      referrerPointsEarned = database.settings.referrer_points;
+      friendPointsEarned = database.settings.friend_points ?? 50;
+      referrerPointsEarned = database.settings.referrer_points ?? 100;
 
       // Friend welcome points lot
       database.credits.push({
@@ -448,6 +478,7 @@ export class BusinessService {
       });
     }
 
+    const customerTotalPoints = this.getTotalPoints(database, customer.id);
     const appUrl = process.env.APP_URL || '';
     const customerLink = `${appUrl}/customer/${customer.personal_token}`;
 
@@ -458,8 +489,21 @@ export class BusinessService {
         data: {
           name: customer.name,
           link: customerLink,
-          friend_points: database.settings.friend_points,
-          referrer_points: database.settings.referrer_points,
+          friend_points: database.settings.friend_points ?? 50,
+          referrer_points: database.settings.referrer_points ?? 100,
+        },
+      });
+    }
+
+    if (database.settings.points_earned_text) {
+      messagingService.send(database, {
+        customerId: customer.id,
+        kind: 'points_earned',
+        data: {
+          shop: database.settings.shop_name,
+          name: customer.name,
+          earned_points: earnedPoints,
+          points_balance: customerTotalPoints,
         },
       });
     }
@@ -477,6 +521,8 @@ export class BusinessService {
       referrerName: referrerCustomer?.name || null,
       referrerPointsGiven: referrerPointsEarned,
       referrerTotalPoints,
+      earnedPoints,
+      totalPoints: customerTotalPoints,
     };
   }
 

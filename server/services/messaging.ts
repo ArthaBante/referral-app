@@ -9,10 +9,12 @@ export interface SendMessageParams {
     link?: string;
     friend_points?: string | number;
     referrer_points?: string | number;
+    earned_points?: string | number;
     points_balance?: string | number;
     amount?: string | number;
     expiry?: string;
     customBody?: string;
+    shop?: string;
   };
 }
 
@@ -57,6 +59,14 @@ export const TEMPLATE_CONFIG: Record<MessageTemplateKind, TemplateConfigDef> = {
     requiredPlaceholders: ['amount', 'expiry'],
     supportedPlaceholders: ['shop', 'name', 'link', 'amount', 'expiry'],
     defaultEn: '{shop}: {amount} of your points expire on {expiry}. Visit us before then!',
+  },
+  points_earned: {
+    kind: 'points_earned',
+    title: 'Points earned after purchase',
+    description: 'Sent to customers after each purchase when points_earned_text setting is enabled.',
+    requiredPlaceholders: ['earned_points', 'points_balance'],
+    supportedPlaceholders: ['shop', 'name', 'earned_points', 'points_balance', 'link'],
+    defaultEn: '{shop}: You earned {earned_points} points today. Balance: {points_balance}.',
   },
   offer_footer: {
     kind: 'offer_footer',
@@ -135,7 +145,7 @@ export class MessagingService {
     settings: Settings,
     data: SendMessageParams['data']
   ): string {
-    const shop = settings.shop_name || 'Your Business';
+    const shop = data.shop || settings.shop_name || 'Your Business';
 
     if (kind === 'offer') {
       const base = (data.customBody || '').trim();
@@ -153,6 +163,8 @@ export class MessagingService {
       templateKind = 'referral_return';
     } else if (kind === 'credit_expiring') {
       templateKind = 'credit_expiring';
+    } else if (kind === 'points_earned') {
+      templateKind = 'points_earned';
     } else {
       templateKind = 'welcome_no_code';
     }
@@ -163,8 +175,9 @@ export class MessagingService {
       shop,
       name: data.name || 'valued customer',
       link: data.link || '',
-      friend_points: data.friend_points !== undefined ? String(data.friend_points) : String(settings.friend_points),
-      referrer_points: data.referrer_points !== undefined ? String(data.referrer_points) : String(settings.referrer_points),
+      friend_points: data.friend_points !== undefined ? String(data.friend_points) : String(settings.friend_points || 50),
+      referrer_points: data.referrer_points !== undefined ? String(data.referrer_points) : String(settings.referrer_points || 100),
+      earned_points: data.earned_points !== undefined ? String(data.earned_points) : '',
       points_balance: data.points_balance !== undefined ? String(data.points_balance) : '',
       amount: data.amount !== undefined ? String(data.amount) : '',
       expiry: data.expiry || '',

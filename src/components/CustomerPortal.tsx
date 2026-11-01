@@ -99,9 +99,12 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
 
             <div className="mt-5 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 text-center">
               <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 block">
-                Your Points Balance
+                Your points
               </span>
               <span className="text-3xl font-black text-white mt-1 block">{data.totalPoints} points</span>
+              <span className="text-xs font-semibold text-amber-200 block mt-2">
+                Every £{data.earnSpendPounds ?? 10} spent = {data.earnPoints ?? 100} points
+              </span>
               <span className="text-[11px] text-rose-200 block mt-1">Friends Referred: {data.friendsReferred}</span>
             </div>
 

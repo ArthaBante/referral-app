@@ -30,9 +30,10 @@ import {
 const getSamplePreviewData = (shopName?: string): Record<string, string> => ({
   shop: shopName || 'Your Business',
   name: 'Emma',
+  earned_points: '100',
+  points_balance: '1150',
   friend_points: '50',
   referrer_points: '100',
-  points_balance: '300',
   min_spend: '10',
   expiry: '15 Jan',
   link: 'ref-frnd.uk/c/abc123',
@@ -43,8 +44,7 @@ const TEMPLATE_KINDS_ORDER: MessageTemplateKind[] = [
   'welcome_with_code',
   'referral_return',
   'credit_expiring',
-  'credit_used',
-  'otp',
+  'points_earned',
   'offer_footer',
 ];
 
@@ -70,20 +70,15 @@ const TEMPLATE_META: Record<
   credit_expiring: {
     number: 4,
     title: 'Credit expiring reminder',
-    note: 'Sent to a customer when their store credit is about to expire.',
+    note: 'Sent to a customer when their points are about to expire.',
   },
-  credit_used: {
+  points_earned: {
     number: 5,
-    title: 'Credit used receipt',
-    note: 'Sent to a customer after they redeem credit against a purchase.',
-  },
-  otp: {
-    number: 6,
-    title: 'OTP for using credit',
-    note: 'Sent to a customer to authorize store credit redemption at billing.',
+    title: 'Points earned notification',
+    note: 'Sent to a customer after each purchase when "Text customers the points they earn" is enabled.',
   },
   offer_footer: {
-    number: 7,
+    number: 6,
     title: 'Offer footer',
     note: 'The line added to the end of every offer (the offer itself is still written by the owner each time on the Send offer screen).',
   },
@@ -638,7 +633,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
               <span>Points Program Ledger</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-center">
               <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
                 <span className="text-[11px] font-bold text-amber-800 block">Points Given for Referrals</span>
                 <span className="text-xl font-black text-amber-950 mt-0.5 block">{dashboard.pointsGivenReferrals}</span>
@@ -650,6 +645,18 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 <span className="text-xl font-black text-indigo-950 mt-0.5 block">{dashboard.welcomePointsGiven}</span>
                 <span className="text-[10px] text-neutral-500">Welcome points to new friends</span>
               </div>
+
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
+                <span className="text-[11px] font-bold text-emerald-800 block">Points Given for Purchases</span>
+                <span className="text-xl font-black text-emerald-950 mt-0.5 block">{dashboard.pointsGivenPurchases || 0}</span>
+                <span className="text-[10px] text-neutral-500">Points earned from spend</span>
+              </div>
+
+              <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200">
+                <span className="text-[11px] font-bold text-rose-800 block">Points Outstanding</span>
+                <span className="text-xl font-black text-rose-950 mt-0.5 block">{dashboard.pointsOutstanding || 0}</span>
+                <span className="text-[10px] text-neutral-500">Active unexpired balance</span>
+              </div>
             </div>
           </div>
         </div>
@@ -659,8 +666,8 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
         <form onSubmit={handleSaveSettings} className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-5 sm:p-7 space-y-6">
           <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
             <div>
-              <h2 className="text-lg font-black text-rose-950">Referral Program Rules & Configuration</h2>
-              <p className="text-xs text-neutral-500">Every change applies only to new referrals and is recorded in the audit log.</p>
+              <h2 className="text-lg font-black text-rose-950">Referral & Purchase Reward Program Configuration</h2>
+              <p className="text-xs text-neutral-500 font-medium">Every change applies only to future transactions and is recorded in the audit log.</p>
             </div>
             {settingsSuccess && (
               <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
@@ -686,10 +693,35 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             </label>
           </div>
 
+          <div className="p-4 bg-neutral-50 border border-neutral-200 rounded-xl space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-rose-950">Everyday Purchase Earn Rate</h3>
+            <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-neutral-800">
+              <span>Every £</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={settings.earn_spend_pounds ?? 10}
+                onChange={(e) => setSettings({ ...settings, earn_spend_pounds: parseInt(e.target.value) || 1 })}
+                className="w-20 p-2 rounded-lg border border-neutral-300 font-black text-rose-950 bg-white text-center"
+              />
+              <span>spent =</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={settings.earn_points ?? 100}
+                onChange={(e) => setSettings({ ...settings, earn_points: parseInt(e.target.value) || 1 })}
+                className="w-24 p-2 rounded-lg border border-neutral-300 font-black text-rose-950 bg-white text-center"
+              />
+              <span>points</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
               <label className="block text-xs font-black uppercase tracking-wider text-amber-950">
-                Points for Each New Friend
+                Points for each new friend
               </label>
               <p className="text-[11px] text-neutral-500">Referrer points for each friend</p>
               <input
@@ -703,7 +735,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
               <label className="block text-xs font-black uppercase tracking-wider text-rose-950">
-                Welcome Points for New Friend
+                Welcome points for the new friend
               </label>
               <p className="text-[11px] text-neutral-500">Points for the friend on first purchase</p>
               <input
@@ -717,9 +749,9 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
               <label className="block text-xs font-black uppercase tracking-wider text-emerald-950">
-                Minimum Spend (£)
+                Friend must spend at least £__
               </label>
-              <p className="text-[11px] text-neutral-500">Friend must spend at least £__</p>
+              <p className="text-[11px] text-neutral-500">Minimum purchase to use code</p>
               <input
                 type="number"
                 min="1"
@@ -745,7 +777,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                Points Expiry Days
+                Points expire after __ days
               </label>
               <input
                 type="number"
@@ -769,6 +801,19 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
               />
             </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+            <input
+              type="checkbox"
+              id="points_earned_text"
+              checked={settings.points_earned_text ?? false}
+              onChange={(e) => setSettings({ ...settings, points_earned_text: e.target.checked })}
+              className="w-4 h-4 text-rose-600 rounded border-neutral-300 focus:ring-rose-500"
+            />
+            <label htmlFor="points_earned_text" className="text-xs font-bold text-neutral-800 cursor-pointer">
+              Text customers the points they earn after each purchase
+            </label>
           </div>
 
           <div>

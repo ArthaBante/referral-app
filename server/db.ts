@@ -36,7 +36,7 @@ export interface Credit {
   customer_id: string;
   points: number;
   remaining: number;
-  source: 'referral' | 'welcome' | 'manual';
+  source: 'purchase' | 'referral' | 'welcome' | 'manual';
   source_sale_id: string | null;
   expires_at: string | null;
   expiring_notified?: boolean;
@@ -59,7 +59,7 @@ export interface ReferralUse {
 export interface MessageRecord {
   id: string;
   customer_id: string;
-  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'offer';
+  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'points_earned' | 'offer';
   channel: 'dev' | 'sms' | 'whatsapp';
   body: string;
   status: 'sent' | 'failed';
@@ -90,12 +90,15 @@ export interface RedemptionToken {
 
 export interface Settings {
   scheme_enabled: boolean;
-  referrer_points: number; // default 100
-  friend_points: number;   // default 50
-  min_spend: number;       // default 10 (£)
-  points_expiry_days: number; // default 365
-  referral_limit: number | null; // default null
-  reminder_days_before: number; // default 7
+  earn_spend_pounds: number;   // default 10
+  earn_points: number;         // default 100
+  points_expiry_days: number;  // default 365
+  points_earned_text: boolean; // default false
+  referrer_points?: number;
+  friend_points?: number;
+  min_spend?: number;
+  referral_limit?: number | null;
+  reminder_days_before?: number;
   shop_name: string;
   updated_at: string;
   updated_by: string;
@@ -125,6 +128,7 @@ export type MessageTemplateKind =
   | 'welcome_with_code'
   | 'referral_return'
   | 'credit_expiring'
+  | 'points_earned'
   | 'offer_footer';
 
 export interface MessageTemplate {
@@ -166,10 +170,13 @@ export function getDefaultDatabaseSchema(): DatabaseSchema {
     redemption_tokens: [],
     settings: {
       scheme_enabled: true,
+      earn_spend_pounds: 10,
+      earn_points: 100,
+      points_expiry_days: 365,
+      points_earned_text: false,
       referrer_points: 100,
       friend_points: 50,
       min_spend: 10,
-      points_expiry_days: 365,
       referral_limit: null,
       reminder_days_before: 7,
       shop_name: 'Your Business',

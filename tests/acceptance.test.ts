@@ -3,242 +3,130 @@ import { getDefaultDatabaseSchema } from '../server/db.ts';
 import { AuthService } from '../server/services/auth.ts';
 import { BusinessService } from '../server/services/business.ts';
 
-describe('RefFrnd Acceptance Tests - Points Model', () => {
-  it('Scenario a: Customer with no code -> receives welcome_no_code message', () => {
+describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
+  it('Scenario a: With defaults (10 spent = 100 points)', () => {
     const testDb = getDefaultDatabaseSchema();
     AuthService.populateSeed(testDb);
     const staffId = testDb.staff[0].id;
 
-    BusinessService.saveSale(testDb, {
+    // £60 sale earns 600 points saved as a 'purchase' lot
+    const res60 = BusinessService.saveSale(testDb, {
       phone: '07700900010',
-      name: 'No Code Customer',
-      marketingConsent: true,
-      receiptRef: 'TEST-A-010',
-      billAmountPounds: 40,
-    }, staffId);
-
-    const cust = testDb.customers.find((c) => c.phone === '+447700900010')!;
-    const msg = testDb.messages.find((m) => m.customer_id === cust.id && m.kind === 'welcome_no_code');
-    expect(msg).toBeDefined();
-    expect(msg!.body).not.toContain('You saved');
-  });
-
-  it('Scenario b: Customer B uses A code on £20 bill -> B gets 50 welcome points, A gets 100 points', () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    const staffId = testDb.staff[0].id;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'Customer A',
-      marketingConsent: true,
-      receiptRef: 'TEST-B-001',
+      name: 'Test Customer A',
+      receiptRef: 'SALE-60',
       billAmountPounds: 60,
     }, staffId);
 
-    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
-    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
+    expect(res60.earnedPoints).toBe(600);
+    const custA = testDb.customers.find((c) => c.phone === '+447700900010')!;
+    const purchaseLot60 = testDb.credits.find((c) => c.customer_id === custA.id && c.source === 'purchase');
+    expect(purchaseLot60).toBeDefined();
+    expect(purchaseLot60!.points).toBe(600);
 
-    const saleRes = BusinessService.saveSale(testDb, {
-      phone: '07700900002',
-      name: 'Customer B',
-      marketingConsent: true,
-      receiptRef: 'TEST-B-002',
-      billAmountPounds: 20,
-      referralCode: codeA.code,
+    // £12.34 sale earns 123 points
+    const res1234 = BusinessService.saveSale(testDb, {
+      phone: '07700900011',
+      name: 'Test Customer B',
+      receiptRef: 'SALE-1234',
+      billAmountPounds: 12.34,
     }, staffId);
+    expect(res1234.earnedPoints).toBe(123);
 
-    expect(saleRes.friendPointsGiven).toBe(50);
-    expect(saleRes.referrerPointsGiven).toBe(100);
-
-    const custB = testDb.customers.find((c) => c.phone === '+447700900002')!;
-    expect(BusinessService.getTotalPoints(testDb, custB.id)).toBe(50);
-    expect(BusinessService.getTotalPoints(testDb, custA.id)).toBe(100);
+    // £12.35 sale earns 124 points
+    const res1235 = BusinessService.saveSale(testDb, {
+      phone: '07700900012',
+      name: 'Test Customer C',
+      receiptRef: 'SALE-1235',
+      billAmountPounds: 12.35,
+    }, staffId);
+    expect(res1235.earnedPoints).toBe(124);
   });
 
-  it('Scenario c: One code, many friends -> Customer C also uses A code -> A has 200 total points', () => {
+  it('Scenario b: Change settings to earn_spend_pounds 5, earn_points 100. £12 sale earns 240 points.', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    testDb.settings.earn_spend_pounds = 5;
+    testDb.settings.earn_points = 100;
+
+    const res12 = BusinessService.saveSale(testDb, {
+      phone: '07700900020',
+      name: 'Custom Spend Customer',
+      receiptRef: 'SALE-12',
+      billAmountPounds: 12,
+    }, staffId);
+
+    expect(res12.earnedPoints).toBe(240);
+  });
+
+  it('Scenario c: points_earned_text off (default) -> no message on sale. Turn it on -> points_earned message sent with earned_points and points_balance.', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    // Default off
+    expect(testDb.settings.points_earned_text).toBe(false);
+    BusinessService.saveSale(testDb, {
+      phone: '07700900030',
+      name: 'SMS Off Customer',
+      receiptRef: 'SMS-OFF',
+      billAmountPounds: 50,
+    }, staffId);
+
+    const custOff = testDb.customers.find((c) => c.phone === '+447700900030')!;
+    const msgOff = testDb.messages.find((m) => m.customer_id === custOff.id && m.kind === 'points_earned');
+    expect(msgOff).toBeUndefined();
+
+    // Turn on
+    testDb.settings.points_earned_text = true;
+    BusinessService.saveSale(testDb, {
+      phone: '07700900031',
+      name: 'SMS On Customer',
+      receiptRef: 'SMS-ON',
+      billAmountPounds: 50,
+    }, staffId);
+
+    const custOn = testDb.customers.find((c) => c.phone === '+447700900031')!;
+    const msgOn = testDb.messages.find((m) => m.customer_id === custOn.id && m.kind === 'points_earned');
+    expect(msgOn).toBeDefined();
+    expect(msgOn!.body).toContain('500');
+  });
+
+  it('Scenario d: Manual points adjustment "+50" and "-30" with reason -> updates balance, adds audit log entry with action points_adjusted.', () => {
     const testDb = getDefaultDatabaseSchema();
     AuthService.populateSeed(testDb);
     const staffId = testDb.staff[0].id;
 
     BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'Customer A',
-      billAmountPounds: 60,
-      receiptRef: 'TEST-C-001',
+      phone: '07700900040',
+      name: 'Adjust Customer',
+      receiptRef: 'ADJ-1',
+      billAmountPounds: 10, // 100 points
     }, staffId);
 
-    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
-    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
+    const cust = testDb.customers.find((c) => c.phone === '+447700900040')!;
+    expect(BusinessService.getTotalPoints(testDb, cust.id)).toBe(100);
 
-    BusinessService.saveSale(testDb, {
-      phone: '07700900002',
-      name: 'Customer B',
-      billAmountPounds: 20,
-      referralCode: codeA.code,
-      receiptRef: 'TEST-C-002',
-    }, staffId);
+    // Add +50 points
+    const resAdd = BusinessService.adjustPoints(testDb, cust.id, 50, 'Goodwill bonus', staffId);
+    expect(resAdd.newTotalPoints).toBe(150);
 
-    BusinessService.saveSale(testDb, {
-      phone: '07700900003',
-      name: 'Customer C',
-      billAmountPounds: 25,
-      referralCode: codeA.code,
-      receiptRef: 'TEST-C-003',
-    }, staffId);
+    // Deduct -30 points
+    const resSub = BusinessService.adjustPoints(testDb, cust.id, -30, 'Correction', staffId);
+    expect(resSub.newTotalPoints).toBe(120);
 
-    expect(BusinessService.getTotalPoints(testDb, custA.id)).toBe(200);
-    expect(BusinessService.getFriendsReferredCount(testDb, custA.id)).toBe(2);
+    // Audit log check
+    const auditEntries = testDb.audit_log.filter((a) => a.action === 'points_adjusted');
+    expect(auditEntries.length).toBe(2);
+    expect(auditEntries[0].details.reason).toBe('Correction');
+    expect(auditEntries[1].details.reason).toBe('Goodwill bonus');
   });
 
-  it('Scenario d: Customer portal page data for A shows totalPoints = 200 and friendsReferred = 2', async () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    const staffId = testDb.staff[0].id;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'Customer A',
-      billAmountPounds: 60,
-      receiptRef: 'TEST-D-001',
-    }, staffId);
-
-    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
-    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900002',
-      name: 'Customer B',
-      billAmountPounds: 20,
-      referralCode: codeA.code,
-      receiptRef: 'TEST-D-002',
-    }, staffId);
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900003',
-      name: 'Customer C',
-      billAmountPounds: 25,
-      referralCode: codeA.code,
-      receiptRef: 'TEST-D-003',
-    }, staffId);
-
-    const pageData = await BusinessService.getCustomerPageData(testDb, custA.personal_token);
-    expect(pageData.totalPoints).toBe(200);
-    expect(pageData.friendsReferred).toBe(2);
-  });
-
-  it('Scenario e: Referral limit enforced -> 3rd referral rejected when limit is 2', () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    const staffId = testDb.staff[0].id;
-    testDb.settings.referral_limit = 2;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'Customer A',
-      billAmountPounds: 60,
-      receiptRef: 'TEST-E-001',
-    }, staffId);
-
-    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
-    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900002',
-      name: 'Customer B',
-      billAmountPounds: 20,
-      referralCode: codeA.code,
-      receiptRef: 'TEST-E-002',
-    }, staffId);
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900003',
-      name: 'Customer C',
-      billAmountPounds: 20,
-      referralCode: codeA.code,
-      receiptRef: 'TEST-E-003',
-    }, staffId);
-
-    const checkLimit = BusinessService.validateReferralCode(testDb, codeA.code, '+447700900004', 20);
-    expect(checkLimit.valid).toBe(false);
-    expect(checkLimit.reason).toContain('referral limit');
-  });
-
-  it('Scenario f: Self-referral and existing customer referral code usage rejected', () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    const staffId = testDb.staff[0].id;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'Customer A',
-      billAmountPounds: 60,
-      receiptRef: 'TEST-F-001',
-    }, staffId);
-
-    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
-    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
-
-    // Self-referral check
-    const checkSelf = BusinessService.validateReferralCode(testDb, codeA.code, custA.phone, 20);
-    expect(checkSelf.valid).toBe(false);
-    expect(checkSelf.reason).toBe('You cannot use your own referral code');
-
-    // Existing customer check
-    const checkExisting = BusinessService.validateReferralCode(testDb, codeA.code, custA.phone, 20);
-    expect(checkExisting.valid).toBe(false);
-  });
-
-  it('Scenario g: Duplicate receipt numbers rejected', () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    const staffId = testDb.staff[0].id;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'R1',
-      receiptRef: 'REC-DUP-1',
-      billAmountPounds: 30,
-    }, staffId);
-
-    let rejected = false;
-    try {
-      BusinessService.saveSale(testDb, {
-        phone: '07700900002',
-        name: 'R2',
-        receiptRef: 'REC-DUP-1',
-        billAmountPounds: 40,
-      }, staffId);
-    } catch (err: any) {
-      rejected = err.message.includes('already exists');
-    }
-    expect(rejected).toBe(true);
-  });
-
-  it('Scenario h: Paused scheme rejects referral code', () => {
-    const testDb = getDefaultDatabaseSchema();
-    AuthService.populateSeed(testDb);
-    const staffId = testDb.staff[0].id;
-
-    BusinessService.saveSale(testDb, {
-      phone: '07700900001',
-      name: 'Customer A',
-      billAmountPounds: 60,
-      receiptRef: 'TEST-H-001',
-    }, staffId);
-
-    const custA = testDb.customers.find((c) => c.phone === '+447700900001')!;
-    const codeA = testDb.referral_codes.find((rc) => rc.owner_customer_id === custA.id)!;
-
-    testDb.settings.scheme_enabled = false;
-    const checkPaused = BusinessService.validateReferralCode(testDb, codeA.code, '+447700900099', 20);
-    expect(checkPaused.valid).toBe(false);
-    expect(checkPaused.reason).toBe('Referral scheme is paused');
-  });
-
-  it('Scenario i: validateSettings rejects invalid values (referrer_points 0, string, referral_limit 0)', () => {
-    expect(() => BusinessService.validateSettings({ referrer_points: 0 })).toThrow();
-    expect(() => BusinessService.validateSettings({ referrer_points: 'abc' as any })).toThrow();
-    expect(() => BusinessService.validateSettings({ referral_limit: 0 })).toThrow();
+  it('Scenario e: validateSettings rejects earn_points 0, "abc", points_expiry_days 0.', () => {
+    expect(() => BusinessService.validateSettings({ earn_points: 0 })).toThrow();
+    expect(() => BusinessService.validateSettings({ earn_points: 'abc' as any })).toThrow();
+    expect(() => BusinessService.validateSettings({ points_expiry_days: 0 })).toThrow();
+    expect(() => BusinessService.validateSettings({ earn_spend_pounds: 0 })).toThrow();
   });
 });

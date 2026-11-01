@@ -25,6 +25,8 @@ export interface CustomerPortalData {
   personalQrDataUri: string;
   totalPoints: number;
   friendsReferred: number;
+  earnSpendPounds: number;
+  earnPoints: number;
   activeLots: Array<{
     id: string;
     points: number;
@@ -51,6 +53,8 @@ export interface OwnerDashboardData {
   referralCodesUsed: number;
   pointsGivenReferrals: number;
   welcomePointsGiven: number;
+  pointsGivenPurchases: number;
+  pointsOutstanding: number;
   friendsReferredTotal: number;
   topReferrers: Array<{
     customerId: string;
@@ -62,10 +66,13 @@ export interface OwnerDashboardData {
 
 export interface SettingsData {
   scheme_enabled: boolean;
+  earn_spend_pounds: number;
+  earn_points: number;
+  points_expiry_days: number;
+  points_earned_text: boolean;
   referrer_points: number;
   friend_points: number;
   min_spend: number;
-  points_expiry_days: number;
   referral_limit: number | null;
   shop_name: string;
   updated_at: string;
@@ -109,8 +116,7 @@ export type MessageTemplateKind =
   | 'welcome_with_code'
   | 'referral_return'
   | 'credit_expiring'
-  | 'credit_used'
-  | 'otp'
+  | 'points_earned'
   | 'offer_footer';
 
 export interface MessageTemplateItem {
