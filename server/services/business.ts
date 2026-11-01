@@ -90,7 +90,7 @@ export class BusinessService {
     points_earned_text: boolean;
     referrer_points: number;
     friend_points: number;
-    min_spend: number;
+    min_spend: number | null;
     referral_limit: number | null;
     reminder_days_before: number;
     shop_name: string;
@@ -116,19 +116,23 @@ export class BusinessService {
 
     const points_earned_text = Boolean(input.points_earned_text);
 
-    const referrer_points = Number(input.referrer_points);
+    const referrer_points = Number(input.referrer_points ?? 100);
     if (isNaN(referrer_points) || referrer_points < 1 || !Number.isInteger(referrer_points)) {
       throw new Error('Referrer points must be a whole number of at least 1.');
     }
 
-    const friend_points = Number(input.friend_points);
+    const friend_points = Number(input.friend_points ?? 100);
     if (isNaN(friend_points) || friend_points < 1 || !Number.isInteger(friend_points)) {
       throw new Error('Friend points must be a whole number of at least 1.');
     }
 
-    const min_spend = Number(input.min_spend);
-    if (isNaN(min_spend) || min_spend < 1 || !Number.isInteger(min_spend)) {
-      throw new Error('Minimum spend must be a whole number of at least £1.');
+    let min_spend: number | null = null;
+    if (input.min_spend !== undefined && input.min_spend !== null && String(input.min_spend).trim() !== '' && String(input.min_spend).trim().toLowerCase() !== 'none') {
+      const ms = Number(input.min_spend);
+      if (isNaN(ms) || ms < 1 || !Number.isInteger(ms)) {
+        throw new Error('Minimum spend must be a whole number of at least £1.');
+      }
+      min_spend = ms;
     }
 
     let referral_limit: number | null = null;
@@ -214,8 +218,8 @@ export class BusinessService {
     }
 
     if (billAmountPounds !== undefined) {
-      const minSpend = database.settings.min_spend ?? 10;
-      if (billAmountPounds < minSpend) {
+      const minSpend = database.settings.min_spend;
+      if (minSpend !== null && minSpend !== undefined && billAmountPounds < minSpend) {
         return { valid: false, reason: `Spend at least £${minSpend} to use a code` };
       }
     }
@@ -223,7 +227,7 @@ export class BusinessService {
     if (database.settings.referral_limit !== null && database.settings.referral_limit !== undefined) {
       const usesCount = database.referral_uses.filter((u) => u.referrer_customer_id === ownerCustomer.id).length;
       if (usesCount >= database.settings.referral_limit) {
-        return { valid: false, reason: 'This code has reached its referral limit' };
+        return { valid: false, reason: 'This code has reached its limit' };
       }
     }
 
@@ -231,7 +235,7 @@ export class BusinessService {
       valid: true,
       referralCode,
       ownerCustomer,
-      friendPoints: database.settings.friend_points ?? 50,
+      friendPoints: database.settings.friend_points ?? 100,
       referrerPoints: database.settings.referrer_points ?? 100,
     };
   }
@@ -278,13 +282,14 @@ export class BusinessService {
 
     let referralQrDataUri: string | null = null;
     let whatsappShareUrl: string = '';
-    const friendPoints = database.settings.friend_points ?? 50;
+    const friendPoints = database.settings.friend_points ?? 100;
     const referrerPoints = database.settings.referrer_points ?? 100;
-    const minSpendPounds = database.settings.min_spend ?? 10;
+    const minSpendPounds = database.settings.min_spend ?? null;
 
     if (referralCode) {
       referralQrDataUri = await QRCode.toDataURL(referralCode.code, { width: 240, margin: 2 });
-      const promoMsg = `Use my code ${referralCode.code} at ${database.settings.shop_name} on your first visit and get ${friendPoints} welcome points! (min spend £${minSpendPounds})`;
+      const minSpendText = minSpendPounds !== null ? ` (min spend £${minSpendPounds})` : '';
+      const promoMsg = `Use my code ${referralCode.code} at ${database.settings.shop_name} on your first visit and get ${friendPoints} welcome points!${minSpendText}`;
       whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(promoMsg)}`;
     }
 
@@ -447,7 +452,7 @@ export class BusinessService {
     const messagesSent: Array<{ id: string; kind: string; status: string; body: string }> = [];
 
     if (appliedReferralCodeRow && referrerCustomer) {
-      friendPointsEarned = database.settings.friend_points ?? 50;
+      friendPointsEarned = database.settings.friend_points ?? 100;
       referrerPointsEarned = database.settings.referrer_points ?? 100;
 
       // Friend welcome points lot
@@ -514,7 +519,7 @@ export class BusinessService {
         data: {
           name: customer.name,
           link: customerLink,
-          friend_points: database.settings.friend_points ?? 50,
+          friend_points: database.settings.friend_points ?? 100,
           referrer_points: database.settings.referrer_points ?? 100,
         },
       });
@@ -608,6 +613,16 @@ export class BusinessService {
         .sort((a, b) => new Date(a.expires_at || '9999-12-31').getTime() - new Date(b.expires_at || '9999-12-31').getTime());
 
       const totalAvailable = activeUnexpiredLots.reduce((sum, l) => sum + l.remaining, 0);
+
+      if (totalAvailable === 0) {
+        return {
+          success: false,
+          newTotalPoints: 0,
+          removedAmount: 0,
+          message: `${customer.name} has no points to remove`,
+        };
+      }
+
       const actualDeduct = Math.min(requestedDeduct, totalAvailable);
       actualDelta = -actualDeduct;
 

@@ -96,7 +96,7 @@ export interface Settings {
   points_earned_text: boolean; // default false
   referrer_points?: number;
   friend_points?: number;
-  min_spend?: number;
+  min_spend?: number | null;
   referral_limit?: number | null;
   reminder_days_before?: number;
   shop_name: string;
@@ -175,7 +175,7 @@ export function getDefaultDatabaseSchema(): DatabaseSchema {
       points_expiry_days: 365,
       points_earned_text: false,
       referrer_points: 100,
-      friend_points: 50,
+      friend_points: 100,
       min_spend: 10,
       referral_limit: null,
       reminder_days_before: 7,

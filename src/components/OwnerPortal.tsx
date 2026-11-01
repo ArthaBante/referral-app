@@ -33,7 +33,7 @@ const getSamplePreviewData = (shopName?: string): Record<string, string> => ({
   amount: '100',
   earned_points: '100',
   points_balance: '1150',
-  friend_points: '50',
+  friend_points: '100',
   referrer_points: '100',
   min_spend: '10',
   expiry: '15 Jan',
@@ -443,10 +443,13 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
   const calculateLiveExample = () => {
     if (!settings) return '';
-    const fp = settings.friend_points ?? 50;
+    const fp = settings.friend_points ?? 100;
     const rp = settings.referrer_points ?? 100;
-    const ms = settings.min_spend ?? 10;
-    return `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie spends at least £${ms}.`;
+    const ms = settings.min_spend;
+    if (ms !== null && ms !== undefined) {
+      return `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie spends at least £${ms}.`;
+    }
+    return `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie shops.`;
   };
 
   const handlePointsAdjustment = async () => {
@@ -615,7 +618,9 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
               <span className="text-xs font-semibold text-neutral-500 uppercase">Total Customers</span>
               <div className="text-2xl font-black text-rose-950 mt-1">{dashboard.totalCustomers}</div>
-              <span className="text-[11px] text-neutral-400">Registered shoppers</span>
+              <span className="text-[11px] text-neutral-400">
+                {dateFilter === 'all' ? 'Registered shoppers' : 'New customers'}
+              </span>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-rose-100 shadow-xs bg-rose-50/40">
@@ -758,16 +763,39 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             </div>
 
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
-              <label className="block text-xs font-black uppercase tracking-wider text-emerald-950">
-                Friend must spend at least £__
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-black uppercase tracking-wider text-emerald-950">
+                  Friend must spend at least £__
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-neutral-600 font-semibold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.min_spend === null}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSettings({ ...settings, min_spend: null });
+                      } else {
+                        setSettings({ ...settings, min_spend: 10 });
+                      }
+                    }}
+                    className="rounded border-neutral-300 text-rose-900 focus:ring-rose-900"
+                  />
+                  <span>No minimum</span>
+                </label>
+              </div>
               <p className="text-[11px] text-neutral-500">Minimum purchase to use code</p>
               <input
                 type="number"
                 min="1"
-                value={settings.min_spend}
-                onChange={(e) => setSettings({ ...settings, min_spend: parseFloat(e.target.value) || 0 })}
-                className="w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none bg-white"
+                disabled={settings.min_spend === null}
+                value={settings.min_spend ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSettings({ ...settings, min_spend: val === '' ? null : parseFloat(val) });
+                }}
+                className={`w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none ${
+                  settings.min_spend === null ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-white text-neutral-900'
+                }`}
               />
             </div>
           </div>

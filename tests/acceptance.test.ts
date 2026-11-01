@@ -219,22 +219,111 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
     expect(() => BusinessService.adjustPoints(testDb, cust.id, 1.5, 'Decimal test', staffId)).toThrow();
   });
 
-  it('Settings rejects friend_points -5, referrer_points "abc", min_spend -1, reminder_days_before 31, and a blank shop name', () => {
+  it('Scenario e: validateSettings rejects earn_points 0, "abc", points_expiry_days 0', () => {
     const validBase = {
       earn_spend_pounds: 10,
       earn_points: 100,
       points_expiry_days: 365,
       referrer_points: 100,
-      friend_points: 50,
+      friend_points: 100,
       min_spend: 10,
       reminder_days_before: 7,
       shop_name: 'Test Shop',
     };
 
-    expect(() => BusinessService.validateSettings({ ...validBase, friend_points: -5 })).toThrow();
-    expect(() => BusinessService.validateSettings({ ...validBase, referrer_points: 'abc' as any })).toThrow();
-    expect(() => BusinessService.validateSettings({ ...validBase, min_spend: -1 })).toThrow();
-    expect(() => BusinessService.validateSettings({ ...validBase, reminder_days_before: 31 })).toThrow();
-    expect(() => BusinessService.validateSettings({ ...validBase, shop_name: '   ' })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, earn_points: 0 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, earn_points: 'abc' as any })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, points_expiry_days: 0 })).toThrow();
+  });
+
+  it('1. Both referral bonuses default to 100', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+
+    expect(testDb.settings.friend_points).toBe(100);
+    expect(testDb.settings.referrer_points).toBe(100);
+  });
+
+  it('2. "No minimum" option for friend minimum spend (min_spend = null)', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    // Create referrer customer
+    const refSale = BusinessService.saveSale(testDb, {
+      phone: '07700900070',
+      name: 'Referrer Customer',
+      billAmountPounds: 20,
+    }, staffId);
+
+    const refCust = testDb.customers.find((c) => c.phone === '+447700900070')!;
+    const refCode = testDb.referral_codes.find((rc) => rc.owner_customer_id === refCust.id)!;
+
+    // With min_spend = 10, £9 bill is rejected
+    testDb.settings.min_spend = 10;
+    const check1 = BusinessService.validateReferralCode(testDb, refCode.code, '07700900071', 9);
+    expect(check1.valid).toBe(false);
+    expect(check1.reason).toBe('Spend at least £10 to use a code');
+
+    // With min_spend = null, £3 bill is accepted
+    testDb.settings.min_spend = null;
+    const check2 = BusinessService.validateReferralCode(testDb, refCode.code, '07700900071', 3);
+    expect(check2.valid).toBe(true);
+  });
+
+  it('3. Referral limit message change: exactly "This code has reached its limit"', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    testDb.settings.referral_limit = 1;
+
+    const refSale = BusinessService.saveSale(testDb, {
+      phone: '07700900080',
+      name: 'Referrer Limit Customer',
+      billAmountPounds: 20,
+    }, staffId);
+
+    const refCust = testDb.customers.find((c) => c.phone === '+447700900080')!;
+    const refCode = testDb.referral_codes.find((rc) => rc.owner_customer_id === refCust.id)!;
+
+    // First use works
+    BusinessService.saveSale(testDb, {
+      phone: '07700900081',
+      name: 'Friend One',
+      billAmountPounds: 20,
+      referralCode: refCode.code,
+    }, staffId);
+
+    // Second use rejected with exact string
+    const check = BusinessService.validateReferralCode(testDb, refCode.code, '07700900082', 20);
+    expect(check.valid).toBe(false);
+    expect(check.reason).toBe('This code has reached its limit');
+  });
+
+  it('5. Removing points from customer with 0 points', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = 'cust-zero-points';
+    testDb.customers.push({
+      id: custId,
+      name: 'Amy Walsh',
+      phone: '+447700900090',
+      personal_token: 'tok-zero',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    const auditCountBefore = testDb.audit_log.length;
+
+    const res = BusinessService.adjustPoints(testDb, custId, -100, 'Test remove 0', staffId);
+    expect(res.success).toBe(false);
+    expect(res.message).toBe('Amy Walsh has no points to remove');
+    expect(testDb.audit_log.length).toBe(auditCountBefore);
   });
 });

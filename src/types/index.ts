@@ -41,7 +41,7 @@ export interface CustomerPortalData {
     whatsappShareUrl: string;
     friendPoints: number;
     referrerPoints: number;
-    minSpendPounds: number;
+    minSpendPounds: number | null;
   } | null;
   marketingConsent: boolean;
   optedOut: boolean;
@@ -72,7 +72,7 @@ export interface SettingsData {
   points_earned_text: boolean;
   referrer_points: number;
   friend_points: number;
-  min_spend: number;
+  min_spend: number | null;
   referral_limit: number | null;
   reminder_days_before: number;
   shop_name: string;

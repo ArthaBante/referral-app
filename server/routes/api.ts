@@ -249,15 +249,25 @@ apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) =>
     const fromStr = req.query.from as string | undefined;
     const snapshot = db.getSnapshot();
 
-    const totalCustomers = snapshot.customers.length;
-    const referralCustomers = snapshot.customers.filter((c) => c.referred_by_customer_id).length;
+    let fromTime: number | null = null;
+    if (fromStr) {
+      const parsed = new Date(fromStr).getTime();
+      if (!isNaN(parsed)) {
+        fromTime = parsed;
+      }
+    }
+
+    let customers = snapshot.customers;
+    if (fromTime !== null) {
+      customers = customers.filter((c) => new Date(c.created_at).getTime() >= fromTime!);
+    }
+
+    const totalCustomers = customers.length;
+    const referralCustomers = customers.filter((c) => c.referred_by_customer_id).length;
 
     let referralUses = snapshot.referral_uses;
-    if (fromStr) {
-      const fromTime = new Date(fromStr).getTime();
-      if (!isNaN(fromTime)) {
-        referralUses = referralUses.filter((u) => new Date(u.created_at).getTime() >= fromTime);
-      }
+    if (fromTime !== null) {
+      referralUses = referralUses.filter((u) => new Date(u.created_at).getTime() >= fromTime!);
     }
 
     const referralCodesUsed = referralUses.length;
@@ -271,8 +281,13 @@ apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) =>
       welcomePointsGiven += u.friend_points;
     }
 
+    let credits = snapshot.credits;
+    if (fromTime !== null) {
+      credits = credits.filter((c) => new Date(c.created_at).getTime() >= fromTime!);
+    }
+
     let pointsGivenPurchases = 0;
-    for (const c of snapshot.credits) {
+    for (const c of credits) {
       if (c.source === 'purchase') {
         pointsGivenPurchases += c.points;
       }

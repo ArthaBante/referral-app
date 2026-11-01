@@ -274,22 +274,24 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           )}
 
-          <div className="mb-6 bg-rose-50/60 border border-rose-100 rounded-xl p-3.5">
-            <div className="text-xs font-bold text-rose-950 flex items-center gap-1.5 mb-2">
-              <MessageSquare className="w-3.5 h-3.5 text-rose-700" />
-              <span>Transactional Messages Dispatched:</span>
-            </div>
-            <div className="space-y-2">
-              {saleSavedResult.messagesSent?.map((msg: any) => (
-                <div key={msg.id} className="text-xs bg-white p-2.5 rounded-lg border border-rose-200 font-mono text-neutral-700">
-                  <div className="text-[10px] font-bold text-rose-800 uppercase mb-1">
-                    Kind: {msg.kind} · Status: {msg.status}
+          {saleSavedResult.messagesSent && saleSavedResult.messagesSent.length > 0 && (
+            <div className="mb-6 bg-rose-50/60 border border-rose-100 rounded-xl p-3.5">
+              <div className="text-xs font-bold text-rose-950 flex items-center gap-1.5 mb-2">
+                <MessageSquare className="w-3.5 h-3.5 text-rose-700" />
+                <span>Transactional Messages Dispatched:</span>
+              </div>
+              <div className="space-y-2">
+                {saleSavedResult.messagesSent.map((msg: any) => (
+                  <div key={msg.id} className="text-xs bg-white p-2.5 rounded-lg border border-rose-200 font-mono text-neutral-700">
+                    <div className="text-[10px] font-bold text-rose-800 uppercase mb-1">
+                      Kind: {msg.kind} · Status: {msg.status}
+                    </div>
+                    <div>"{msg.body}"</div>
                   </div>
-                  <div>"{msg.body}"</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex flex-col sm:flex-row gap-3">
             <button

@@ -68,7 +68,7 @@ export class AuthService {
       points_expiry_days: 365,
       points_earned_text: false,
       referrer_points: 100,
-      friend_points: 50,
+      friend_points: 100,
       min_spend: 10,
       referral_limit: null,
       reminder_days_before: 7,

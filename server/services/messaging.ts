@@ -175,7 +175,7 @@ export class MessagingService {
       shop,
       name: data.name || 'valued customer',
       link: data.link || '',
-      friend_points: data.friend_points !== undefined ? String(data.friend_points) : String(settings.friend_points || 50),
+      friend_points: data.friend_points !== undefined ? String(data.friend_points) : String(settings.friend_points || 100),
       referrer_points: data.referrer_points !== undefined ? String(data.referrer_points) : String(settings.referrer_points || 100),
       earned_points: data.earned_points !== undefined ? String(data.earned_points) : '',
       points_balance: data.points_balance !== undefined ? String(data.points_balance) : '',

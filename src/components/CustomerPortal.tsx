@@ -156,7 +156,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               </div>
               <h2 className="text-lg font-black text-rose-950">Refer Friends</h2>
               <p className="text-xs text-neutral-700 mt-1 max-w-xs mx-auto font-medium">
-                Give friends {data.referralCode.friendPoints} welcome points on their first visit. You get {data.referralCode.referrerPoints} points when they spend at least £{data.referralCode.minSpendPounds}.
+                {data.referralCode.minSpendPounds !== null
+                  ? `Give friends ${data.referralCode.friendPoints} welcome points on their first visit. You get ${data.referralCode.referrerPoints} points when they spend at least £${data.referralCode.minSpendPounds}.`
+                  : `Give friends ${data.referralCode.friendPoints} welcome points on their first visit. You get ${data.referralCode.referrerPoints} points when they shop with us.`}
               </p>
 
               <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 flex items-center justify-center gap-3 my-3">
