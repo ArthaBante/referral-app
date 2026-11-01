@@ -116,9 +116,20 @@ export class BusinessService {
 
     const points_earned_text = Boolean(input.points_earned_text);
 
-    const referrer_points = Number(input.referrer_points ?? 100);
-    const friend_points = Number(input.friend_points ?? 50);
-    const min_spend = Number(input.min_spend ?? 10);
+    const referrer_points = Number(input.referrer_points);
+    if (isNaN(referrer_points) || referrer_points < 1 || !Number.isInteger(referrer_points)) {
+      throw new Error('Referrer points must be a whole number of at least 1.');
+    }
+
+    const friend_points = Number(input.friend_points);
+    if (isNaN(friend_points) || friend_points < 1 || !Number.isInteger(friend_points)) {
+      throw new Error('Friend points must be a whole number of at least 1.');
+    }
+
+    const min_spend = Number(input.min_spend);
+    if (isNaN(min_spend) || min_spend < 1 || !Number.isInteger(min_spend)) {
+      throw new Error('Minimum spend must be a whole number of at least £1.');
+    }
 
     let referral_limit: number | null = null;
     if (input.referral_limit !== undefined && input.referral_limit !== null && String(input.referral_limit).trim() !== '') {
@@ -130,8 +141,17 @@ export class BusinessService {
     }
 
     const reminder_days_before = Number(input.reminder_days_before ?? 7);
+    if (isNaN(reminder_days_before) || reminder_days_before < 0 || reminder_days_before > 30 || !Number.isInteger(reminder_days_before)) {
+      throw new Error('Reminder days before must be a whole number from 0 to 30.');
+    }
 
-    const shop_name = input.shop_name !== undefined ? String(input.shop_name).trim() : 'Your Business';
+    if (input.shop_name === undefined || input.shop_name === null || typeof input.shop_name !== 'string') {
+      throw new Error('Shop name is required.');
+    }
+    const shop_name = input.shop_name.trim();
+    if (shop_name.length < 1 || shop_name.length > 60) {
+      throw new Error('Shop name must be between 1 and 60 characters.');
+    }
 
     return {
       scheme_enabled: typeof input.scheme_enabled === 'boolean' ? input.scheme_enabled : undefined,
@@ -144,14 +164,14 @@ export class BusinessService {
       min_spend,
       referral_limit,
       reminder_days_before,
-      shop_name: shop_name || 'Your Business',
+      shop_name,
     };
   }
 
   public static calculatePurchasePoints(billAmountPounds: number, earnSpendPounds: number, earnPoints: number): number {
     if (earnSpendPounds <= 0 || earnPoints <= 0) return 0;
-    const raw = (billAmountPounds * earnPoints) / earnSpendPounds;
-    return Math.floor(raw + 0.5);
+    const pence = Math.round(billAmountPounds * 100);
+    return Math.floor((2 * pence * earnPoints + earnSpendPounds * 100) / (2 * earnSpendPounds * 100));
   }
 
   public static validateReferralCode(
@@ -424,6 +444,8 @@ export class BusinessService {
     let referrerPointsEarned = 0;
     let referrerTotalPoints = 0;
 
+    const messagesSent: Array<{ id: string; kind: string; status: string; body: string }> = [];
+
     if (appliedReferralCodeRow && referrerCustomer) {
       friendPointsEarned = database.settings.friend_points ?? 50;
       referrerPointsEarned = database.settings.referrer_points ?? 100;
@@ -467,7 +489,7 @@ export class BusinessService {
       referrerTotalPoints = this.getTotalPoints(database, referrerCustomer.id);
 
       const appUrl = process.env.APP_URL || '';
-      messagingService.send(database, {
+      const msgRef = messagingService.send(database, {
         customerId: referrerCustomer.id,
         kind: 'referral_return',
         data: {
@@ -476,6 +498,9 @@ export class BusinessService {
           link: `${appUrl}/customer/${referrerCustomer.personal_token}`,
         },
       });
+      if (msgRef) {
+        messagesSent.push({ id: msgRef.id, kind: msgRef.kind, status: msgRef.status, body: msgRef.body });
+      }
     }
 
     const customerTotalPoints = this.getTotalPoints(database, customer.id);
@@ -483,7 +508,7 @@ export class BusinessService {
     const customerLink = `${appUrl}/customer/${customer.personal_token}`;
 
     if (isNewCustomer) {
-      messagingService.send(database, {
+      const msgWelcome = messagingService.send(database, {
         customerId: customer.id,
         kind: appliedReferralCodeRow ? 'welcome_with_code' : 'welcome_no_code',
         data: {
@@ -493,10 +518,13 @@ export class BusinessService {
           referrer_points: database.settings.referrer_points ?? 100,
         },
       });
+      if (msgWelcome) {
+        messagesSent.push({ id: msgWelcome.id, kind: msgWelcome.kind, status: msgWelcome.status, body: msgWelcome.body });
+      }
     }
 
     if (database.settings.points_earned_text) {
-      messagingService.send(database, {
+      const msgEarned = messagingService.send(database, {
         customerId: customer.id,
         kind: 'points_earned',
         data: {
@@ -506,6 +534,9 @@ export class BusinessService {
           points_balance: customerTotalPoints,
         },
       });
+      if (msgEarned) {
+        messagesSent.push({ id: msgEarned.id, kind: msgEarned.kind, status: msgEarned.status, body: msgEarned.body });
+      }
     }
 
     return {
@@ -523,6 +554,7 @@ export class BusinessService {
       referrerTotalPoints,
       earnedPoints,
       totalPoints: customerTotalPoints,
+      messagesSent,
     };
   }
 
@@ -537,6 +569,10 @@ export class BusinessService {
       throw new Error('Reason is required for manual points adjustment');
     }
 
+    if (!Number.isInteger(pointsDelta) || pointsDelta === 0) {
+      throw new Error('Points adjustment must be a non-zero whole number.');
+    }
+
     const customer = database.customers.find((c) => c.id === customerId);
     if (!customer) {
       throw new Error('Customer not found');
@@ -544,6 +580,9 @@ export class BusinessService {
 
     const pointsExpiryDays = database.settings.points_expiry_days || 365;
     const expiresAt = new Date(Date.now() + pointsExpiryDays * 86400000).toISOString();
+
+    let actualDelta = pointsDelta;
+    let message: string | undefined;
 
     if (pointsDelta > 0) {
       database.credits.push({
@@ -558,17 +597,32 @@ export class BusinessService {
         created_by_staff_id: staffId,
         created_at: new Date().toISOString(),
       });
+      message = `Added ${pointsDelta} points`;
     } else if (pointsDelta < 0) {
-      let needed = Math.abs(pointsDelta);
-      const activeLots = database.credits
-        .filter((c) => c.customer_id === customer.id && c.remaining > 0)
-        .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
+      const now = new Date();
+      const requestedDeduct = Math.abs(pointsDelta);
 
-      for (const lot of activeLots) {
+      // Only take from active unexpired lots, oldest expiry first
+      const activeUnexpiredLots = database.credits
+        .filter((c) => c.customer_id === customer.id && c.remaining > 0 && (!c.expires_at || new Date(c.expires_at) > now))
+        .sort((a, b) => new Date(a.expires_at || '9999-12-31').getTime() - new Date(b.expires_at || '9999-12-31').getTime());
+
+      const totalAvailable = activeUnexpiredLots.reduce((sum, l) => sum + l.remaining, 0);
+      const actualDeduct = Math.min(requestedDeduct, totalAvailable);
+      actualDelta = -actualDeduct;
+
+      let needed = actualDeduct;
+      for (const lot of activeUnexpiredLots) {
         if (needed <= 0) break;
         const deduct = Math.min(lot.remaining, needed);
         lot.remaining -= deduct;
         needed -= deduct;
+      }
+
+      if (requestedDeduct > totalAvailable) {
+        message = `Removed ${actualDeduct} points (${customer.name} only had ${actualDeduct})`;
+      } else {
+        message = `Removed ${actualDeduct} points`;
       }
     }
 
@@ -576,11 +630,16 @@ export class BusinessService {
       id: crypto.randomUUID(),
       staff_id: staffId,
       action: 'points_adjusted',
-      details: { customerId, customerName: customer.name, pointsDelta, reason: reason.trim() },
+      details: { customerId, customerName: customer.name, pointsDelta: actualDelta, reason: reason.trim() },
       created_at: new Date().toISOString(),
     });
 
-    return { success: true, newTotalPoints: this.getTotalPoints(database, customer.id) };
+    return {
+      success: true,
+      newTotalPoints: this.getTotalPoints(database, customer.id),
+      removedAmount: Math.abs(actualDelta),
+      message,
+    };
   }
 
   public static runDailyJob(database: DatabaseSchema): { expired: number; remindersSent: number } {

@@ -127,30 +127,6 @@ export class ApiClient {
     });
   }
 
-  public static async requestOtp(customerId: string): Promise<{
-    success: boolean;
-    expiresAt: string;
-  }> {
-    return this.request('/cashier/request-otp', {
-      method: 'POST',
-      body: JSON.stringify({ customerId }),
-    });
-  }
-
-  public static async verifyOtp(customerId: string, otp: string): Promise<{ verified: boolean; redemptionToken: string }> {
-    return this.request('/cashier/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ customerId, otp }),
-    });
-  }
-
-  public static async verifyPersonalQr(customerId: string, scannedTokenOrUrl: string): Promise<{ verified: boolean; redemptionToken: string; customerName: string }> {
-    return this.request('/cashier/verify-personal-qr', {
-      method: 'POST',
-      body: JSON.stringify({ customerId, scannedTokenOrUrl }),
-    });
-  }
-
   public static async saveSale(payload: {
     phone: string;
     name?: string;

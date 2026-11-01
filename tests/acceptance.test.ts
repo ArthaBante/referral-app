@@ -42,6 +42,15 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
     expect(res1235.earnedPoints).toBe(124);
   });
 
+  it('Points rounding tests at £10 = 100 points: £1.15 -> 12, £2.05 -> 21, £4.35 -> 44, £8.45 -> 85, £0.05 -> 1, £0.04 -> 0', () => {
+    expect(BusinessService.calculatePurchasePoints(1.15, 10, 100)).toBe(12);
+    expect(BusinessService.calculatePurchasePoints(2.05, 10, 100)).toBe(21);
+    expect(BusinessService.calculatePurchasePoints(4.35, 10, 100)).toBe(44);
+    expect(BusinessService.calculatePurchasePoints(8.45, 10, 100)).toBe(85);
+    expect(BusinessService.calculatePurchasePoints(0.05, 10, 100)).toBe(1);
+    expect(BusinessService.calculatePurchasePoints(0.04, 10, 100)).toBe(0);
+  });
+
   it('Scenario b: Change settings to earn_spend_pounds 5, earn_points 100. £12 sale earns 240 points.', () => {
     const testDb = getDefaultDatabaseSchema();
     AuthService.populateSeed(testDb);
@@ -123,10 +132,109 @@ describe('RefFrnd Acceptance Tests - Purchase Points Model', () => {
     expect(auditEntries[1].details.reason).toBe('Goodwill bonus');
   });
 
-  it('Scenario e: validateSettings rejects earn_points 0, "abc", points_expiry_days 0.', () => {
-    expect(() => BusinessService.validateSettings({ earn_points: 0 })).toThrow();
-    expect(() => BusinessService.validateSettings({ earn_points: 'abc' as any })).toThrow();
-    expect(() => BusinessService.validateSettings({ points_expiry_days: 0 })).toThrow();
-    expect(() => BusinessService.validateSettings({ earn_spend_pounds: 0 })).toThrow();
+  it('Removing 5000 points from a customer with 1000 leaves 0 and the audit records 1000', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    BusinessService.saveSale(testDb, {
+      phone: '07700900050',
+      name: 'Deduct Customer',
+      receiptRef: 'DED-100',
+      billAmountPounds: 100, // 1000 points
+    }, staffId);
+
+    const cust = testDb.customers.find((c) => c.phone === '+447700900050')!;
+    expect(BusinessService.getTotalPoints(testDb, cust.id)).toBe(1000);
+
+    const res = BusinessService.adjustPoints(testDb, cust.id, -5000, 'Over-deduct test', staffId);
+    expect(res.newTotalPoints).toBe(0);
+    expect(res.removedAmount).toBe(1000);
+    expect(res.message).toContain('1000');
+
+    const auditEntry = testDb.audit_log.find((a) => a.action === 'points_adjusted')!;
+    expect(auditEntry.details.pointsDelta).toBe(-1000);
+  });
+
+  it('Removing points never touches expired lots', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const custId = 'cust-expired-test';
+    testDb.customers.push({
+      id: custId,
+      name: 'Expired Lot Customer',
+      phone: '+447700900060',
+      personal_token: 'tok-exp',
+      marketing_consent: false,
+      consent_at: new Date().toISOString(),
+      opted_out_at: null,
+      referred_by_customer_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    // Expired lot of 500 points
+    const pastDate = new Date(Date.now() - 10 * 86400000).toISOString();
+    testDb.credits.push({
+      id: 'lot-exp',
+      customer_id: custId,
+      points: 500,
+      remaining: 500,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: pastDate,
+      created_at: pastDate,
+    });
+
+    // Active lot of 200 points
+    const futureDate = new Date(Date.now() + 30 * 86400000).toISOString();
+    testDb.credits.push({
+      id: 'lot-act',
+      customer_id: custId,
+      points: 200,
+      remaining: 200,
+      source: 'manual',
+      source_sale_id: null,
+      expires_at: futureDate,
+      created_at: new Date().toISOString(),
+    });
+
+    // Remove 100 points
+    BusinessService.adjustPoints(testDb, custId, -100, 'Test deduction', staffId);
+
+    // Active lot should be reduced to 100, expired lot should still have 500 remaining
+    const expiredLot = testDb.credits.find((c) => c.id === 'lot-exp')!;
+    const activeLot = testDb.credits.find((c) => c.id === 'lot-act')!;
+    expect(expiredLot.remaining).toBe(500);
+    expect(activeLot.remaining).toBe(100);
+  });
+
+  it('1.5 points is rejected', () => {
+    const testDb = getDefaultDatabaseSchema();
+    AuthService.populateSeed(testDb);
+    const staffId = testDb.staff[0].id;
+
+    const cust = testDb.customers[0] || { id: 'test-cust' };
+    expect(() => BusinessService.adjustPoints(testDb, cust.id, 1.5, 'Decimal test', staffId)).toThrow();
+  });
+
+  it('Settings rejects friend_points -5, referrer_points "abc", min_spend -1, reminder_days_before 31, and a blank shop name', () => {
+    const validBase = {
+      earn_spend_pounds: 10,
+      earn_points: 100,
+      points_expiry_days: 365,
+      referrer_points: 100,
+      friend_points: 50,
+      min_spend: 10,
+      reminder_days_before: 7,
+      shop_name: 'Test Shop',
+    };
+
+    expect(() => BusinessService.validateSettings({ ...validBase, friend_points: -5 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, referrer_points: 'abc' as any })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, min_spend: -1 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, reminder_days_before: 31 })).toThrow();
+    expect(() => BusinessService.validateSettings({ ...validBase, shop_name: '   ' })).toThrow();
   });
 });

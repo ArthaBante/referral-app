@@ -269,7 +269,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-center gap-2 text-xs text-amber-900 font-bold">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                {saleSavedResult.referrerName} gets {saleSavedResult.referrerPointsGiven} points — she now has {saleSavedResult.referrerTotalPoints.toLocaleString()} points
+                {saleSavedResult.referrerName} gets {saleSavedResult.referrerPointsGiven} points — {saleSavedResult.referrerName} now has {saleSavedResult.referrerTotalPoints.toLocaleString()} points
               </span>
             </div>
           )}

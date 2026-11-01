@@ -105,7 +105,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               <span className="text-xs font-semibold text-amber-200 block mt-2">
                 Every £{data.earnSpendPounds ?? 10} spent = {data.earnPoints ?? 100} points
               </span>
-              <span className="text-[11px] text-rose-200 block mt-1">Friends Referred: {data.friendsReferred}</span>
             </div>
 
             {data.activeLots && data.activeLots.length > 0 && (
@@ -157,7 +156,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               </div>
               <h2 className="text-lg font-black text-rose-950">Refer Friends</h2>
               <p className="text-xs text-neutral-700 mt-1 max-w-xs mx-auto font-medium">
-                Give friends {data.referralCode.friendPoints} welcome points on their first visit. You get {data.referralCode.referrerPoints} points when they spend at least £{data.referralCode.minSpend}.
+                Give friends {data.referralCode.friendPoints} welcome points on their first visit. You get {data.referralCode.referrerPoints} points when they spend at least £{data.referralCode.minSpendPounds}.
               </p>
 
               <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 flex items-center justify-center gap-3 my-3">

@@ -30,6 +30,7 @@ import {
 const getSamplePreviewData = (shopName?: string): Record<string, string> => ({
   shop: shopName || 'Your Business',
   name: 'Emma',
+  amount: '100',
   earned_points: '100',
   points_balance: '1150',
   friend_points: '50',
@@ -69,7 +70,7 @@ const TEMPLATE_META: Record<
   },
   credit_expiring: {
     number: 4,
-    title: 'Credit expiring reminder',
+    title: 'Points expiring reminder',
     note: 'Sent to a customer when their points are about to expire.',
   },
   points_earned: {
@@ -450,17 +451,26 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
   const handlePointsAdjustment = async () => {
     if (!selectedCustomerId || !adjAmount || !adjReason.trim()) {
-      alert('Please enter points delta and reason');
+      alert('Please enter points adjustment amount and reason');
+      return;
+    }
+    const val = parseFloat(adjAmount);
+    if (isNaN(val) || !Number.isInteger(val) || val === 0) {
+      alert('Points adjustment must be a non-zero whole number');
       return;
     }
     setAdjLoading(true);
     try {
-      await ApiClient.adjustPoints(selectedCustomerId, parseInt(adjAmount), adjReason.trim());
+      const res = await ApiClient.adjustPoints(selectedCustomerId, val, adjReason.trim());
       setAdjAmount('');
       setAdjReason('');
-      loadCustomerDetail(selectedCustomerId);
-      loadCustomers();
-      alert('Points adjustment saved!');
+      await loadCustomerDetail(selectedCustomerId);
+      await loadCustomers();
+      if (res.message) {
+        alert(res.message);
+      } else {
+        alert('Points adjustment saved!');
+      }
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -617,7 +627,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
               <span className="text-xs font-semibold text-neutral-500 uppercase">Codes Used</span>
               <div className="text-2xl font-black text-neutral-900 mt-1">{dashboard.referralCodesUsed}</div>
-              <span className="text-[11px] text-neutral-400">Redemptions recorded</span>
+              <span className="text-[11px] text-neutral-400">Friends who used a code</span>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs bg-emerald-50/40">
@@ -774,7 +784,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
                 Points expire after __ days
@@ -784,6 +794,20 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 min="1"
                 value={settings.points_expiry_days}
                 onChange={(e) => setSettings({ ...settings, points_expiry_days: parseInt(e.target.value) || 365 })}
+                className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
+                Remind customers __ days before points expire (0 = off)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="30"
+                value={settings.reminder_days_before ?? 7}
+                onChange={(e) => setSettings({ ...settings, reminder_days_before: parseInt(e.target.value) || 0 })}
                 className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
               />
             </div>
@@ -922,7 +946,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
           </div>
 
           {selectedCustomerId && selectedCustomerDetail && (
-            <div className="bg-white rounded-2xl border-2 border-rose-900 shadow-xl p-6 space-y-4">
+            <div className="bg-white rounded-2xl border-2 border-rose-900 shadow-xl p-6 space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
                 <div>
                   <h3 className="text-lg font-black text-rose-950">
@@ -941,6 +965,57 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 >
                   Close
                 </button>
+              </div>
+
+              {/* Current Points Balance at top */}
+              <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-amber-800">Current Points Balance</div>
+                  <div className="text-3xl font-black text-rose-950">{selectedCustomerDetail.totalPoints?.toLocaleString()} points</div>
+                </div>
+              </div>
+
+              {/* Point Lots list (newest first) */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-black uppercase tracking-wider text-rose-900">Point Lots (Newest First)</h4>
+                <div className="overflow-x-auto border border-neutral-200 rounded-xl">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-neutral-50 text-neutral-500 font-bold uppercase border-b border-neutral-200">
+                      <tr>
+                        <th className="py-2.5 px-3">Source</th>
+                        <th className="py-2.5 px-3">Points</th>
+                        <th className="py-2.5 px-3">Remaining</th>
+                        <th className="py-2.5 px-3">Date Added</th>
+                        <th className="py-2.5 px-3">Expiry Date</th>
+                        <th className="py-2.5 px-3">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 font-medium">
+                      {(selectedCustomerDetail.credits || [])
+                        .slice()
+                        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .map((lot: any) => (
+                          <tr key={lot.id} className="hover:bg-neutral-50">
+                            <td className="py-2.5 px-3 font-bold capitalize text-rose-950">{lot.source}</td>
+                            <td className="py-2.5 px-3 font-bold text-neutral-900">{lot.points}</td>
+                            <td className="py-2.5 px-3 font-bold text-emerald-800">{lot.remaining}</td>
+                            <td className="py-2.5 px-3 text-neutral-600">{new Date(lot.created_at).toLocaleDateString('en-GB')}</td>
+                            <td className="py-2.5 px-3 text-neutral-600">
+                              {lot.expires_at ? new Date(lot.expires_at).toLocaleDateString('en-GB') : 'No expiry'}
+                            </td>
+                            <td className="py-2.5 px-3 text-neutral-600 font-mono">
+                              {lot.source === 'manual' ? lot.reason || '-' : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      {(!selectedCustomerDetail.credits || selectedCustomerDetail.credits.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="py-4 text-center text-neutral-400">No point lots recorded.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -246,16 +246,27 @@ apiRouter.get('/cashier/find-sale', requireStaff, (req: Request, res: Response) 
 
 apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) => {
   try {
+    const fromStr = req.query.from as string | undefined;
     const snapshot = db.getSnapshot();
 
     const totalCustomers = snapshot.customers.length;
     const referralCustomers = snapshot.customers.filter((c) => c.referred_by_customer_id).length;
-    const referralCodesUsed = snapshot.referral_uses.length;
+
+    let referralUses = snapshot.referral_uses;
+    if (fromStr) {
+      const fromTime = new Date(fromStr).getTime();
+      if (!isNaN(fromTime)) {
+        referralUses = referralUses.filter((u) => new Date(u.created_at).getTime() >= fromTime);
+      }
+    }
+
+    const referralCodesUsed = referralUses.length;
+    const friendsReferredTotal = referralUses.length;
 
     let pointsGivenReferrals = 0;
     let welcomePointsGiven = 0;
 
-    for (const u of snapshot.referral_uses) {
+    for (const u of referralUses) {
       pointsGivenReferrals += u.referrer_points;
       welcomePointsGiven += u.friend_points;
     }
@@ -276,7 +287,7 @@ apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) =>
     }
 
     const referrerCounts: Record<string, number> = {};
-    for (const u of snapshot.referral_uses) {
+    for (const u of referralUses) {
       referrerCounts[u.referrer_customer_id] = (referrerCounts[u.referrer_customer_id] || 0) + 1;
     }
 
@@ -297,6 +308,7 @@ apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) =>
       totalCustomers,
       referralCustomers,
       referralCodesUsed,
+      friendsReferredTotal,
       pointsGivenReferrals,
       welcomePointsGiven,
       pointsGivenPurchases,
@@ -439,29 +451,12 @@ apiRouter.post('/owner/customers/:id/points-adjustment', requireOwner, (req: Req
     const { pointsDelta, amountPounds, reason } = req.body;
     const val = pointsDelta !== undefined ? Number(pointsDelta) : Number(amountPounds);
 
-    if (isNaN(val) || val === 0 || !reason || !reason.trim()) {
-      return res.status(400).json({ error: 'Adjustment points amount and a valid reason are required.' });
+    if (isNaN(val) || !Number.isInteger(val) || val === 0) {
+      return res.status(400).json({ error: 'Adjustment points amount must be a non-zero whole number.' });
     }
 
-    const result = db.transaction((database) => {
-      return BusinessService.adjustPoints(database, id, val, reason, session.staff.id);
-    });
-
-    return res.json(result);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-apiRouter.post('/owner/customers/:id/credit-adjustment', requireOwner, (req: Request, res: Response) => {
-  try {
-    const session = (req as any).session as UserSession;
-    const { id } = req.params;
-    const { pointsDelta, amountPounds, reason } = req.body;
-    const val = pointsDelta !== undefined ? Number(pointsDelta) : Number(amountPounds);
-
-    if (isNaN(val) || val === 0 || !reason || !reason.trim()) {
-      return res.status(400).json({ error: 'Adjustment points amount and a valid reason are required.' });
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Reason is required for manual points adjustment.' });
     }
 
     const result = db.transaction((database) => {
