@@ -37,7 +37,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [customerExists, setCustomerExists] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
-  const [activeCreditPounds, setActiveCreditPounds] = useState(0);
+  const [totalPoints, setTotalPoints] = useState(0);
   const [marketingConsent, setMarketingConsent] = useState(false);
 
   // Referral Code state
@@ -46,26 +46,12 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [referralValid, setReferralValid] = useState<boolean | null>(null);
   const [referralReason, setReferralReason] = useState<string | null>(null);
   const [referralOwnerName, setReferralOwnerName] = useState<string | null>(null);
-  const [friendDiscountPounds, setFriendDiscountPounds] = useState(0);
-  const [referrerRewardPounds, setReferrerRewardPounds] = useState(0);
-
-  // Credit Usage state
-  const [wantUseCredit, setWantUseCredit] = useState(false);
-  const [creditAuthVerified, setCreditAuthVerified] = useState(false);
-  const [redemptionToken, setRedemptionToken] = useState<string | null>(null);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpInput, setOtpInput] = useState('');
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [friendPoints, setFriendPoints] = useState(0);
+  const [referrerPoints, setReferrerPoints] = useState(0);
 
   // Bill & Receipt Ref fields
   const [billAmountInput, setBillAmountInput] = useState('');
   const [receiptRef, setReceiptRef] = useState('');
-
-  // Live calculation breakdown
-  const [calcCreditUsedPounds, setCalcCreditUsedPounds] = useState(0);
-  const [calcFinalPayablePounds, setCalcFinalPayablePounds] = useState(0);
-  const [instructions, setInstructions] = useState('');
 
   // Status & Confirmation
   const [loading, setLoading] = useState(false);
@@ -76,36 +62,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SaleItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-
-  // Recalculate bill
-  useEffect(() => {
-    const billNum = parseFloat(billAmountInput);
-    if (!phoneInput || isNaN(billNum) || billNum <= 0) {
-      setCalcCreditUsedPounds(0);
-      setCalcFinalPayablePounds(isNaN(billNum) ? 0 : billNum);
-      setInstructions('');
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      try {
-        const res = await ApiClient.calculateBill({
-          phone: phoneInput,
-          billAmountPounds: billNum,
-          referralCode: referralValid ? referralCodeInput.trim() : undefined,
-          useCredit: wantUseCredit && creditAuthVerified,
-          verified: creditAuthVerified,
-        });
-        setCalcCreditUsedPounds(res.creditUsedPounds);
-        setCalcFinalPayablePounds(res.finalPayablePounds);
-        setInstructions(res.instructions);
-      } catch (e) {
-        // Silent catch during typing
-      }
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [billAmountInput, phoneInput, referralValid, referralCodeInput, wantUseCredit, creditAuthVerified]);
 
   const handlePhoneLookup = async (phoneToLookup: string) => {
     setErrorMsg(null);
@@ -119,7 +75,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       if (res.exists) {
         setCustomerId(res.customerId || null);
         setCustomerName(res.name || '');
-        setActiveCreditPounds(res.activeCreditPounds || 0);
+        setTotalPoints(res.totalPoints || 0);
         setMarketingConsent(Boolean(res.marketingConsent));
         setShowReferralInput(false);
         setReferralCodeInput('');
@@ -127,11 +83,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       } else {
         setCustomerId(null);
         setCustomerName('');
-        setActiveCreditPounds(0);
+        setTotalPoints(0);
         setMarketingConsent(false);
-        setWantUseCredit(false);
-        setCreditAuthVerified(false);
-        setRedemptionToken(null);
       }
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -153,50 +106,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       setReferralValid(res.valid);
       setReferralReason(res.reason || null);
       setReferralOwnerName(res.ownerName || null);
-      setFriendDiscountPounds(res.friendDiscountPounds || 0);
-      setReferrerRewardPounds(res.referrerRewardPounds || 0);
+      setFriendPoints(res.friendPoints || 0);
+      setReferrerPoints(res.referrerPoints || 0);
     } catch (err: any) {
       setReferralValid(false);
       setReferralReason(err.message);
-    }
-  };
-
-  const handleRequestOtp = async () => {
-    if (!customerId) return;
-    setOtpError(null);
-    try {
-      await ApiClient.requestOtp(customerId);
-      setOtpSent(true);
-    } catch (err: any) {
-      setOtpError(err.message);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!customerId || !otpInput.trim()) return;
-    setOtpError(null);
-    try {
-      const res = await ApiClient.verifyOtp(customerId, otpInput);
-      if (res.verified && res.redemptionToken) {
-        setCreditAuthVerified(true);
-        setRedemptionToken(res.redemptionToken);
-      }
-    } catch (err: any) {
-      setOtpError(err.message);
-    }
-  };
-
-  const handleScannedPersonalQr = async (scannedValue: string) => {
-    if (!customerId) return;
-    try {
-      const res = await ApiClient.verifyPersonalQr(customerId, scannedValue);
-      if (res.verified && res.redemptionToken) {
-        setCreditAuthVerified(true);
-        setRedemptionToken(res.redemptionToken);
-        alert(`QR Verified successfully for ${res.customerName}! Store credit is unlocked for this bill.`);
-      }
-    } catch (err: any) {
-      alert(`QR verification error: ${err.message}`);
     }
   };
 
@@ -218,11 +132,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
       return;
     }
 
-    if (wantUseCredit && (!creditAuthVerified || !redemptionToken)) {
-      setErrorMsg('Store credit requires OTP or Personal QR verification before saving.');
-      return;
-    }
-
     setErrorMsg(null);
     setLoading(true);
     try {
@@ -233,8 +142,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
         receiptRef: receiptRef.trim() ? receiptRef.trim() : undefined,
         billAmountPounds: billNum,
         referralCode: referralValid ? referralCodeInput.trim() : undefined,
-        creditToUsePounds: wantUseCredit && creditAuthVerified ? calcCreditUsedPounds : undefined,
-        redemptionToken: wantUseCredit && creditAuthVerified ? redemptionToken || undefined : undefined,
       });
 
       setSaleSavedResult(res);
@@ -251,25 +158,17 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
     setCustomerExists(false);
     setCustomerId(null);
     setCustomerName('');
-    setActiveCreditPounds(0);
+    setTotalPoints(0);
     setMarketingConsent(false);
     setShowReferralInput(false);
     setReferralCodeInput('');
     setReferralValid(null);
     setReferralReason(null);
     setReferralOwnerName(null);
-    setFriendDiscountPounds(0);
-    setReferrerRewardPounds(0);
-    setWantUseCredit(false);
-    setCreditAuthVerified(false);
-    setRedemptionToken(null);
-    setOtpSent(false);
-    setOtpInput('');
+    setFriendPoints(0);
+    setReferrerPoints(0);
     setBillAmountInput('');
     setReceiptRef('');
-    setCalcCreditUsedPounds(0);
-    setCalcFinalPayablePounds(0);
-    setInstructions('');
     setErrorMsg(null);
     setSaleSavedResult(null);
   };
@@ -295,7 +194,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-rose-950 tracking-tight">Billing Counter</h1>
-            <p className="text-xs text-neutral-500">Record sales, apply referral codes and redeem credit</p>
+            <p className="text-xs text-neutral-500">Record sales and apply referral codes</p>
           </div>
         </div>
 
@@ -341,18 +240,10 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-neutral-50 p-4 rounded-xl mb-4 border border-neutral-200 text-center">
+          <div className="grid grid-cols-2 gap-3 bg-neutral-50 p-4 rounded-xl mb-4 border border-neutral-200 text-center">
             <div>
               <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Bill Total</div>
               <div className="text-lg font-bold text-neutral-900">£{saleSavedResult.billAmountPounds.toFixed(2)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-blue-600 font-semibold">Discount</div>
-              <div className="text-lg font-bold text-blue-700">£{(saleSavedResult.discountAmountPounds || 0).toFixed(2)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-amber-600 font-semibold">Credit Redeemed</div>
-              <div className="text-lg font-bold text-amber-700">£{saleSavedResult.creditUsedPounds.toFixed(2)}</div>
             </div>
             <div>
               <div className="text-[11px] uppercase tracking-wider text-emerald-700 font-semibold">Net Payable</div>
@@ -360,11 +251,18 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
             </div>
           </div>
 
-          {saleSavedResult.referrerName && saleSavedResult.referrerReturnPounds > 0 && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-center gap-2 text-xs text-amber-900">
+          {saleSavedResult.friendPointsGiven > 0 && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-2 flex items-center gap-2 text-xs text-emerald-900 font-bold">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{saleSavedResult.customerName} gets {saleSavedResult.friendPointsGiven} welcome points</span>
+            </div>
+          )}
+
+          {saleSavedResult.referrerName && saleSavedResult.referrerPointsGiven > 0 && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-center gap-2 text-xs text-amber-900 font-bold">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                {saleSavedResult.referrerName} gets <strong>£{saleSavedResult.referrerReturnPounds.toFixed(2)}</strong> added to their account.
+                {saleSavedResult.referrerName} gets {saleSavedResult.referrerPointsGiven} points — she now has {saleSavedResult.referrerTotalPoints} points
               </span>
             </div>
           )}
@@ -541,7 +439,7 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                         <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 font-semibold space-y-1">
                           <div className="flex items-center gap-1.5 font-bold">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Code valid. Take £{friendDiscountPounds.toFixed(2)} off at the till. {referralOwnerName || 'Referrer'} gets £{referrerRewardPounds.toFixed(2)} back.</span>
+                            <span>Code valid. {customerName || 'Friend'} gets {friendPoints} welcome points. {referralOwnerName || 'Referrer'} gets {referrerPoints} points.</span>
                           </div>
                         </div>
                       )}
@@ -567,107 +465,11 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                   </div>
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-right">
                     <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-                      Account Balance
+                      Points Balance
                     </div>
-                    <div className="text-2xl font-black text-amber-950">£{activeCreditPounds.toFixed(2)}</div>
+                    <div className="text-2xl font-black text-amber-950">{totalPoints}</div>
                   </div>
                 </div>
-
-                {activeCreditPounds > 0 && (
-                  <div className="pt-1">
-                    {!wantUseCredit ? (
-                      <button
-                        type="button"
-                        onClick={() => setWantUseCredit(true)}
-                        className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-rose-950 font-black text-xs shadow-xs flex items-center justify-center gap-2 transition"
-                      >
-                        <CreditCard className="w-4 h-4" />
-                        <span>Use £{activeCreditPounds.toFixed(2)} Store Credit On This Bill</span>
-                      </button>
-                    ) : (
-                      <div className="p-3.5 bg-amber-50/80 border border-amber-300 rounded-xl space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs font-black text-amber-950 uppercase flex items-center gap-1.5">
-                            <KeyRound className="w-4 h-4 text-amber-700" />
-                            <span>Verify Customer To Redeem Credit</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setWantUseCredit(false);
-                              setCreditAuthVerified(false);
-                              setRedemptionToken(null);
-                            }}
-                            className="text-[11px] text-neutral-600 hover:underline"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-
-                        {creditAuthVerified ? (
-                          <div className="p-2.5 bg-emerald-100 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-900 flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Customer Verified (Single-use token issued). Credit ready to apply!</span>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setIsQrScannerOpen(true)}
-                                className="p-2.5 bg-white border border-neutral-300 hover:border-rose-600 rounded-xl text-left transition"
-                              >
-                                <div className="text-xs font-bold text-neutral-900 flex items-center gap-1">
-                                  <QrCode className="w-3.5 h-3.5 text-rose-700" />
-                                  <span>Scan Customer QR</span>
-                                </div>
-                                <div className="text-[10px] text-neutral-500 mt-0.5">Camera / Type token</div>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={handleRequestOtp}
-                                className="p-2.5 bg-white border border-neutral-300 hover:border-amber-600 rounded-xl text-left transition"
-                              >
-                                <div className="text-xs font-bold text-neutral-900 flex items-center gap-1">
-                                  <Phone className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Send OTP to Mobile</span>
-                                </div>
-                                <div className="text-[10px] text-neutral-500 mt-0.5">6-digit SMS code</div>
-                              </button>
-                            </div>
-
-                            {otpSent && (
-                              <div className="p-2.5 bg-white rounded-xl border border-neutral-300 space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-neutral-600">Enter 6-digit OTP:</span>
-                                </div>
-                                <div className="flex gap-2">
-                                  <input
-                                    type="text"
-                                    maxLength={6}
-                                    value={otpInput}
-                                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
-                                    placeholder="123456"
-                                    className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 text-center font-mono font-bold tracking-widest text-base"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={handleVerifyOtp}
-                                    className="px-4 py-1.5 bg-rose-900 hover:bg-rose-800 text-white rounded-lg text-xs font-bold"
-                                  >
-                                    Verify
-                                  </button>
-                                </div>
-                                {otpError && <div className="text-[11px] text-red-600 font-semibold">{otpError}</div>}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -714,23 +516,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                 />
               </div>
             </div>
-
-            {instructions && (
-              <div className="mt-4 p-4 rounded-xl bg-amber-50 border-2 border-amber-400 text-amber-950 animate-in fade-in duration-150">
-                <div className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-1 flex items-center gap-1">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  <span>Till Action Instructions:</span>
-                </div>
-                <div className="text-base sm:text-lg font-black text-rose-950 leading-tight">
-                  {instructions}
-                </div>
-                <div className="mt-2 pt-2 border-t border-amber-200/80 flex items-center justify-between text-xs font-semibold text-neutral-700">
-                  <span>Gross: £{parseFloat(billAmountInput || '0').toFixed(2)}</span>
-                  {calcCreditUsedPounds > 0 && <span className="text-amber-800">Credit: -£{calcCreditUsedPounds.toFixed(2)}</span>}
-                  <span className="text-emerald-800 font-bold text-sm">Collect at Till: £{calcFinalPayablePounds.toFixed(2)}</span>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="pt-2">
@@ -804,15 +589,8 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-neutral-400 block text-[10px]">Bill Amount</span>
-                      <span className="font-bold text-neutral-800">£{sale.billAmountPounds.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      <span className="text-neutral-400 block text-[10px]">Credit Redeemed</span>
-                      <span className="font-bold text-amber-800">£{sale.creditUsedPounds.toFixed(2)}</span>
-                    </div>
+                  <div className="text-xs font-bold text-neutral-800">
+                    Bill Amount: £{sale.billAmountPounds.toFixed(2)}
                   </div>
                 </div>
               ))
@@ -820,13 +598,6 @@ export const CashierPortal: React.FC<CashierPortalProps> = ({
           </div>
         </div>
       )}
-
-      <QrScannerModal
-        isOpen={isQrScannerOpen}
-        onClose={() => setIsQrScannerOpen(false)}
-        onScan={handleScannedPersonalQr}
-        title="Scan Customer Personal Pass"
-      />
     </div>
   );
 };

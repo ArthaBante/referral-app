@@ -106,7 +106,7 @@ export class ApiClient {
     formattedPhone: string;
     customerId?: string;
     name?: string;
-    activeCreditPounds?: number;
+    totalPoints?: number;
     marketingConsent?: boolean;
   }> {
     return this.request(`/cashier/lookup-customer?phone=${encodeURIComponent(phone)}`);
@@ -117,8 +117,9 @@ export class ApiClient {
     reason?: string;
     code?: string;
     ownerName?: string;
-    friendDiscountPounds?: number;
-    referrerRewardPounds?: number;
+    friendPoints?: number;
+    referrerPoints?: number;
+    minSpend?: number;
   }> {
     return this.request('/cashier/validate-referral', {
       method: 'POST',
@@ -150,24 +151,6 @@ export class ApiClient {
     });
   }
 
-  public static async calculateBill(params: {
-    phone: string;
-    billAmountPounds: number;
-    referralCode?: string;
-    useCredit?: boolean;
-    verified?: boolean;
-  }): Promise<{
-    billAmountPounds: number;
-    creditUsedPounds: number;
-    finalPayablePounds: number;
-    instructions: string;
-  }> {
-    return this.request('/cashier/calculate-bill', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-  }
-
   public static async saveSale(payload: {
     phone: string;
     name?: string;
@@ -175,8 +158,6 @@ export class ApiClient {
     receiptRef?: string;
     billAmountPounds: number;
     referralCode?: string;
-    creditToUsePounds?: number;
-    redemptionToken?: string;
   }): Promise<any> {
     return this.request('/cashier/save-sale', {
       method: 'POST',
@@ -215,10 +196,10 @@ export class ApiClient {
     return this.request(`/owner/customers/${id}`);
   }
 
-  public static async adjustCredit(customerId: string, amountPounds: number, reason: string): Promise<any> {
-    return this.request(`/owner/customers/${customerId}/credit-adjustment`, {
+  public static async adjustPoints(customerId: string, pointsDelta: number, reason: string): Promise<any> {
+    return this.request(`/owner/customers/${customerId}/points-adjustment`, {
       method: 'POST',
-      body: JSON.stringify({ amountPounds, reason }),
+      body: JSON.stringify({ pointsDelta, reason }),
     });
   }
 

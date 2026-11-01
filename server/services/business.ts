@@ -1,4 +1,4 @@
-import { DatabaseSchema, Customer, ReferralCode, Sale, Credit, Settings, RedemptionToken } from '../db.ts';
+import { DatabaseSchema, Customer, ReferralCode, Sale, Credit, Settings, ReferralUse } from '../db.ts';
 import { messagingService } from './messaging.ts';
 import crypto from 'crypto';
 import QRCode from 'qrcode';
@@ -10,8 +10,6 @@ export interface SaveSaleInput {
   receiptRef?: string;
   billAmountPounds: number;
   referralCode?: string;
-  creditToUsePounds?: number;
-  redemptionToken?: string;
 }
 
 export class BusinessService {
@@ -61,10 +59,6 @@ export class BusinessService {
     return crypto.randomBytes(24).toString('hex');
   }
 
-  public static generateRedemptionToken(): string {
-    return crypto.randomBytes(24).toString('hex');
-  }
-
   public static poundsToPence(pounds: number): number {
     return Math.round(pounds * 100);
   }
@@ -90,26 +84,26 @@ export class BusinessService {
 
   public static validateSettings(input: any): {
     scheme_enabled?: boolean;
-    friend_discount: number;
-    referrer_reward: number;
+    referrer_points: number;
+    friend_points: number;
     min_spend: number;
-    expiry_days: number;
+    points_expiry_days: number;
+    referral_limit: number | null;
     reminder_days_before: number;
-    max_credit_share: number;
     shop_name: string;
   } {
     if (!input || typeof input !== 'object') {
       throw new Error('Invalid settings input.');
     }
 
-    const friend_discount = Number(input.friend_discount);
-    if (isNaN(friend_discount) || friend_discount < 1) {
-      throw new Error('Friend discount must be at least £1.');
+    const referrer_points = Number(input.referrer_points);
+    if (isNaN(referrer_points) || referrer_points < 1) {
+      throw new Error('Points for each new friend must be at least 1.');
     }
 
-    const referrer_reward = Number(input.referrer_reward);
-    if (isNaN(referrer_reward) || referrer_reward < 1) {
-      throw new Error('Referrer reward must be at least £1.');
+    const friend_points = Number(input.friend_points);
+    if (isNaN(friend_points) || friend_points < 1) {
+      throw new Error('Welcome points must be at least 1.');
     }
 
     const min_spend = Number(input.min_spend);
@@ -117,23 +111,23 @@ export class BusinessService {
       throw new Error('Minimum spend must be at least £1.');
     }
 
-    if (friend_discount >= min_spend) {
-      throw new Error('Friend discount must be less than minimum spend.');
+    const points_expiry_days = Number(input.points_expiry_days ?? input.expiry_days ?? 365);
+    if (isNaN(points_expiry_days) || points_expiry_days < 1) {
+      throw new Error('Points expiry days must be at least 1.');
     }
 
-    const expiry_days = Number(input.expiry_days ?? 90);
-    if (isNaN(expiry_days) || expiry_days < 7 || expiry_days > 365) {
-      throw new Error('Expiry days must be between 7 and 365.');
+    let referral_limit: number | null = null;
+    if (input.referral_limit !== undefined && input.referral_limit !== null && String(input.referral_limit).trim() !== '') {
+      const lim = Number(input.referral_limit);
+      if (isNaN(lim) || lim < 1 || !Number.isInteger(lim)) {
+        throw new Error('Referral limit must be a positive number or empty.');
+      }
+      referral_limit = lim;
     }
 
     const reminder_days_before = Number(input.reminder_days_before ?? 7);
     if (isNaN(reminder_days_before) || reminder_days_before < 0 || reminder_days_before > 30) {
       throw new Error('Reminder days before expiry must be between 0 and 30.');
-    }
-
-    const max_credit_share = Number(input.max_credit_share ?? 50);
-    if (isNaN(max_credit_share) || max_credit_share < 1 || max_credit_share > 100) {
-      throw new Error('Max credit share must be between 1 and 100%.');
     }
 
     const shop_name = input.shop_name !== undefined ? String(input.shop_name).trim() : 'Your Business';
@@ -143,12 +137,12 @@ export class BusinessService {
 
     return {
       scheme_enabled: typeof input.scheme_enabled === 'boolean' ? input.scheme_enabled : undefined,
-      friend_discount,
-      referrer_reward,
+      referrer_points,
+      friend_points,
       min_spend,
-      expiry_days,
+      points_expiry_days,
+      referral_limit,
       reminder_days_before,
-      max_credit_share,
       shop_name: shop_name || 'Your Business',
     };
   }
@@ -157,17 +151,20 @@ export class BusinessService {
     database: DatabaseSchema,
     codeStr: string,
     buyerPhone: string,
-    billAmountPence?: number
-  ): { valid: boolean; reason?: string; referralCode?: ReferralCode; ownerCustomer?: Customer } {
+    billAmountPounds?: number
+  ): {
+    valid: boolean;
+    reason?: string;
+    referralCode?: ReferralCode;
+    ownerCustomer?: Customer;
+    friendPoints?: number;
+    referrerPoints?: number;
+  } {
     const cleanCode = codeStr.trim().toUpperCase();
 
     const referralCode = database.referral_codes.find((rc) => rc.code === cleanCode);
     if (!referralCode) {
       return { valid: false, reason: 'Code not found' };
-    }
-
-    if (referralCode.status !== 'unused') {
-      return { valid: false, reason: 'Code already used' };
     }
 
     if (!database.settings.scheme_enabled) {
@@ -181,7 +178,7 @@ export class BusinessService {
 
     const normalizedBuyerPhone = this.normalizeUkPhone(buyerPhone);
     if (ownerCustomer.phone === normalizedBuyerPhone) {
-      return { valid: false, reason: "Can't use your own code" };
+      return { valid: false, reason: 'You cannot use your own referral code' };
     }
 
     const existingBuyer = database.customers.find((c) => c.phone === normalizedBuyerPhone);
@@ -189,77 +186,38 @@ export class BusinessService {
       return { valid: false, reason: 'Only for new customers' };
     }
 
-    if (billAmountPence !== undefined) {
-      const minSpendPence = (database.settings.min_spend ?? 20) * 100;
-      if (billAmountPence < minSpendPence) {
-        return { valid: false, reason: `Spend at least £${database.settings.min_spend} to use a code` };
+    if (billAmountPounds !== undefined) {
+      const minSpend = database.settings.min_spend ?? 10;
+      if (billAmountPounds < minSpend) {
+        return { valid: false, reason: `Spend at least £${minSpend} to use a code` };
       }
     }
 
-    return { valid: true, referralCode, ownerCustomer };
-  }
-
-  public static calculateUsableCredit(
-    database: DatabaseSchema,
-    customerId: string,
-    billAmountPence: number
-  ): { totalActiveCredit: number; maxUsableCredit: number; lots: Credit[] } {
-    const activeLots = database.credits
-      .filter((c) => c.customer_id === customerId && c.status === 'active' && c.remaining > 0)
-      .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
-
-    const totalActiveCredit = activeLots.reduce((sum, c) => sum + c.remaining, 0);
-    const maxCreditSharePercent = database.settings.max_credit_share || 50;
-
-    const maxAllowedByBill = Math.round((billAmountPence * maxCreditSharePercent) / 100);
-    const maxUsableCredit = Math.min(totalActiveCredit, maxAllowedByBill);
-
-    return { totalActiveCredit, maxUsableCredit, lots: activeLots };
-  }
-
-  public static requestOtp(
-    database: DatabaseSchema,
-    customerId: string
-  ): { success: boolean; expiresAt: string } {
-    const customer = database.customers.find((c) => c.id === customerId);
-    if (!customer) {
-      throw new Error('Customer not found');
+    if (database.settings.referral_limit !== null && database.settings.referral_limit !== undefined) {
+      const usesCount = database.referral_uses.filter((u) => u.referrer_customer_id === ownerCustomer.id).length;
+      if (usesCount >= database.settings.referral_limit) {
+        return { valid: false, reason: 'This code has reached its referral limit' };
+      }
     }
-
-    const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
-    const recentOtps = database.otp_codes.filter(
-      (o) => o.customer_id === customerId && o.created_at >= oneHourAgo
-    );
-
-    if (recentOtps.length >= 3) {
-      throw new Error('Rate limit exceeded: Maximum 3 OTPs allowed per hour for this customer');
-    }
-
-    const otpDigits = Math.floor(100000 + Math.random() * 900000).toString();
-    const codeHash = crypto.createHash('sha256').update(otpDigits).digest('hex');
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-    database.otp_codes.push({
-      id: crypto.randomUUID(),
-      customer_id: customerId,
-      code_hash: codeHash,
-      code_plain: otpDigits,
-      expires_at: expiresAt,
-      attempts: 0,
-      used_at: null,
-      created_at: new Date().toISOString(),
-    });
-
-    messagingService.send(database, {
-      customerId: customer.id,
-      kind: 'otp',
-      data: { otp: otpDigits },
-    });
 
     return {
-      success: true,
-      expiresAt,
+      valid: true,
+      referralCode,
+      ownerCustomer,
+      friendPoints: database.settings.friend_points,
+      referrerPoints: database.settings.referrer_points,
     };
+  }
+
+  public static getTotalPoints(database: DatabaseSchema, customerId: string): number {
+    const now = new Date();
+    return database.credits
+      .filter((c) => c.customer_id === customerId && c.remaining > 0 && (!c.expires_at || new Date(c.expires_at) > now))
+      .reduce((sum, c) => sum + c.remaining, 0);
+  }
+
+  public static getFriendsReferredCount(database: DatabaseSchema, customerId: string): number {
+    return database.referral_uses.filter((u) => u.referrer_customer_id === customerId).length;
   }
 
   public static async getCustomerPageData(database: DatabaseSchema, token: string) {
@@ -272,11 +230,11 @@ export class BusinessService {
 
     const now = new Date();
     const activeLots = database.credits
-      .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
+      .filter((c) => c.customer_id === customer.id && c.remaining > 0 && (!c.expires_at || new Date(c.expires_at) > now))
       .map((c) => ({
         id: c.id,
-        amountPounds: this.penceToPounds(c.amount),
-        remainingPounds: this.penceToPounds(c.remaining),
+        points: c.points,
+        remaining: c.remaining,
         source: c.source,
         expiresAt: c.expires_at,
         daysLeft: c.expires_at
@@ -284,22 +242,22 @@ export class BusinessService {
           : null,
       }));
 
-    const totalActiveCreditPence = activeLots.reduce((sum, c) => sum + this.poundsToPence(c.remainingPounds), 0);
+    const totalPoints = this.getTotalPoints(database, customer.id);
+    const friendsReferred = this.getFriendsReferredCount(database, customer.id);
 
     const appUrl = process.env.APP_URL || '';
     const customerPageUrl = `${appUrl}/customer/${customer.personal_token}`;
-
     const personalQrDataUri = await QRCode.toDataURL(customerPageUrl, { width: 280, margin: 2 });
 
     let referralQrDataUri: string | null = null;
     let whatsappShareUrl: string = '';
-    const friendDiscountPounds = database.settings.friend_discount;
-    const referrerRewardPounds = referralCode ? this.penceToPounds(referralCode.referrer_return_amount) : database.settings.referrer_reward;
+    const friendPoints = database.settings.friend_points;
+    const referrerPoints = database.settings.referrer_points;
     const minSpendPounds = database.settings.min_spend;
 
     if (referralCode) {
       referralQrDataUri = await QRCode.toDataURL(referralCode.code, { width: 240, margin: 2 });
-      const promoMsg = `Use my code ${referralCode.code} at ${database.settings.shop_name} and get £${friendDiscountPounds} off your first visit (min spend £${minSpendPounds}).`;
+      const promoMsg = `Use my code ${referralCode.code} at ${database.settings.shop_name} on your first visit and get ${friendPoints} welcome points! (min spend £${minSpendPounds})`;
       whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(promoMsg)}`;
     }
 
@@ -311,103 +269,22 @@ export class BusinessService {
       fullName: customer.name,
       personalToken: customer.personal_token,
       personalQrDataUri,
-      totalActiveCreditPounds: this.penceToPounds(totalActiveCreditPence),
+      totalPoints,
+      friendsReferred,
       activeLots,
       referralCode: referralCode
         ? {
             code: referralCode.code,
-            status: referralCode.status,
             qrDataUri: referralQrDataUri,
             whatsappShareUrl,
-            friendDiscountPounds,
-            referrerRewardPounds,
+            friendPoints,
+            referrerPoints,
+            minSpendPounds,
           }
         : null,
       marketingConsent: customer.marketing_consent && !customer.opted_out_at,
       optedOut: !!customer.opted_out_at,
     };
-  }
-
-  public static verifyOtp(
-    database: DatabaseSchema,
-    customerId: string,
-    otpInput: string
-  ): { verified: boolean; redemptionToken: string } {
-    const now = new Date();
-    const otps = database.otp_codes
-      .filter((o) => o.customer_id === customerId && !o.used_at)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    const activeOtp = otps[0];
-    if (!activeOtp) {
-      throw new Error('No active OTP found. Please send a new OTP.');
-    }
-
-    if (new Date(activeOtp.expires_at) < now) {
-      throw new Error('OTP has expired. Please send a new OTP.');
-    }
-
-    if (activeOtp.attempts >= 5) {
-      throw new Error('OTP locked: Maximum 5 attempts exceeded. Cashier must send a new OTP.');
-    }
-
-    const inputHash = crypto.createHash('sha256').update(otpInput.trim()).digest('hex');
-    if (inputHash !== activeOtp.code_hash) {
-      activeOtp.attempts += 1;
-      const remaining = 5 - activeOtp.attempts;
-      if (remaining <= 0) {
-        throw new Error('OTP locked: Maximum 5 attempts exceeded. Cashier must send a new OTP.');
-      }
-      throw new Error(`Incorrect OTP. ${remaining} attempts remaining.`);
-    }
-
-    activeOtp.used_at = now.toISOString();
-
-    const token = this.generateRedemptionToken();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    database.redemption_tokens.push({
-      id: crypto.randomUUID(),
-      customer_id: customerId,
-      token,
-      expires_at: expiresAt,
-      used: false,
-      created_at: now.toISOString(),
-    });
-
-    return { verified: true, redemptionToken: token };
-  }
-
-  public static verifyPersonalQr(
-    database: DatabaseSchema,
-    customerId: string,
-    scannedTokenOrUrl: string
-  ): { verified: boolean; redemptionToken: string; customerName: string } {
-    const now = new Date();
-    const customer = database.customers.find((c) => c.id === customerId);
-    if (!customer) {
-      throw new Error('Customer not found');
-    }
-
-    const tokenPart = scannedTokenOrUrl.includes('/customer/')
-      ? scannedTokenOrUrl.split('/customer/')[1]?.trim()
-      : scannedTokenOrUrl.trim();
-
-    if (tokenPart !== customer.personal_token) {
-      throw new Error('Personal QR does not match this customer!');
-    }
-
-    const token = this.generateRedemptionToken();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    database.redemption_tokens.push({
-      id: crypto.randomUUID(),
-      customer_id: customerId,
-      token,
-      expires_at: expiresAt,
-      used: false,
-      created_at: now.toISOString(),
-    });
-
-    return { verified: true, redemptionToken: token, customerName: customer.name };
   }
 
   public static saveSale(
@@ -422,8 +299,6 @@ export class BusinessService {
       receiptRef,
       billAmountPounds,
       referralCode,
-      creditToUsePounds,
-      redemptionToken,
     } = input;
 
     if (!phone || billAmountPounds === undefined) {
@@ -452,18 +327,14 @@ export class BusinessService {
 
     let appliedReferralCodeRow: ReferralCode | null = null;
     let referrerCustomer: Customer | null = null;
-    let friendDiscountPence = 0;
-    let referrerReturnPence = 0;
 
     if (referralCode) {
-      const check = this.validateReferralCode(database, referralCode, normalizedPhone, billAmountPence);
+      const check = this.validateReferralCode(database, referralCode, normalizedPhone, Number(billAmountPounds));
       if (!check.valid) {
         throw new Error(check.reason || 'Invalid referral code');
       }
       appliedReferralCodeRow = check.referralCode!;
       referrerCustomer = check.ownerCustomer!;
-      friendDiscountPence = database.settings.friend_discount * 100;
-      referrerReturnPence = appliedReferralCodeRow.referrer_return_amount;
     }
 
     if (isNewCustomer) {
@@ -486,8 +357,6 @@ export class BusinessService {
       };
       database.customers.push(customer);
 
-      const promisedReturnOnOwnCode = database.settings.referrer_reward * 100;
-
       let uniqueCode = this.generateReferralCode();
       while (database.referral_codes.some((rc) => rc.code === uniqueCode)) {
         uniqueCode = this.generateReferralCode();
@@ -497,74 +366,12 @@ export class BusinessService {
         id: crypto.randomUUID(),
         code: uniqueCode,
         owner_customer_id: newCustId,
-        status: 'unused',
-        used_by_customer_id: null,
-        used_sale_id: null,
-        used_at: null,
-        issued_sale_id: '',
-        referrer_return_amount: promisedReturnOnOwnCode,
+        created_at: new Date().toISOString(),
       });
     }
 
     if (!customer) {
       throw new Error('Customer record could not be established.');
-    }
-
-    const requestedCreditPence = creditToUsePounds ? this.poundsToPence(Number(creditToUsePounds)) : 0;
-    let actualCreditUsedPence = 0;
-
-    if (requestedCreditPence > 0) {
-      if (isNewCustomer) {
-        throw new Error('New customers cannot use credit on their first purchase.');
-      }
-
-      if (!redemptionToken) {
-        throw new Error('Store credit redemption requires authentication via OTP or Personal QR.');
-      }
-
-      const tokenRecord = database.redemption_tokens.find(
-        (rt) => rt.token === redemptionToken && rt.customer_id === customer!.id
-      );
-
-      if (!tokenRecord) {
-        throw new Error('Invalid or unauthenticated redemption token.');
-      }
-
-      if (tokenRecord.used) {
-        throw new Error('Redemption token has already been used.');
-      }
-
-      if (new Date(tokenRecord.expires_at) <= new Date()) {
-        throw new Error('Redemption token has expired. Please verify customer again.');
-      }
-
-      tokenRecord.used = true;
-
-      const effectiveBillForCredit = billAmountPence - friendDiscountPence;
-      const usable = this.calculateUsableCredit(database, customer.id, effectiveBillForCredit);
-      actualCreditUsedPence = Math.min(requestedCreditPence, usable.maxUsableCredit);
-
-      if (actualCreditUsedPence > 0) {
-        let neededPence = actualCreditUsedPence;
-        const activeLots = database.credits
-          .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
-          .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
-
-        for (const lot of activeLots) {
-          if (neededPence <= 0) break;
-          const deduct = Math.min(lot.remaining, neededPence);
-          lot.remaining -= deduct;
-          neededPence -= deduct;
-
-          database.credit_redemptions.push({
-            id: crypto.randomUUID(),
-            credit_id: lot.id,
-            sale_id: '',
-            amount: deduct,
-            created_at: new Date().toISOString(),
-          });
-        }
-      }
     }
 
     const saleId = crypto.randomUUID();
@@ -573,61 +380,69 @@ export class BusinessService {
       customer_id: customer.id,
       receipt_ref: cleanReceiptRef,
       bill_amount: billAmountPence,
-      discount_amount: friendDiscountPence,
-      credit_used: actualCreditUsedPence,
+      discount_amount: 0,
       referral_code_id: appliedReferralCodeRow ? appliedReferralCodeRow.id : null,
       staff_id: staffId,
       created_at: new Date().toISOString(),
     };
     database.sales.push(saleRecord);
 
-    if (isNewCustomer) {
-      const ownCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer!.id);
-      if (ownCode) {
-        ownCode.issued_sale_id = saleId;
-      }
-    }
+    const pointsExpiryDays = database.settings.points_expiry_days || 365;
+    const expiresAt = new Date(Date.now() + pointsExpiryDays * 86400000).toISOString();
 
-    for (const cr of database.credit_redemptions) {
-      if (!cr.sale_id) {
-        cr.sale_id = saleId;
-      }
-    }
-
-    const expiryDays = database.settings.expiry_days || 90;
-    const expiresAt = new Date(Date.now() + expiryDays * 86400000).toISOString();
-    const expiryDateStr = this.formatShortDate(expiresAt);
+    let friendPointsEarned = 0;
+    let referrerPointsEarned = 0;
+    let referrerTotalPoints = 0;
 
     if (appliedReferralCodeRow && referrerCustomer) {
-      appliedReferralCodeRow.status = 'used';
-      appliedReferralCodeRow.used_by_customer_id = customer.id;
-      appliedReferralCodeRow.used_sale_id = saleId;
-      appliedReferralCodeRow.used_at = new Date().toISOString();
+      friendPointsEarned = database.settings.friend_points;
+      referrerPointsEarned = database.settings.referrer_points;
 
+      // Friend welcome points lot
+      database.credits.push({
+        id: crypto.randomUUID(),
+        customer_id: customer.id,
+        points: friendPointsEarned,
+        remaining: friendPointsEarned,
+        source: 'welcome',
+        source_sale_id: saleId,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+      });
+
+      // Referrer points lot
       database.credits.push({
         id: crypto.randomUUID(),
         customer_id: referrerCustomer.id,
+        points: referrerPointsEarned,
+        remaining: referrerPointsEarned,
+        source: 'referral',
         source_sale_id: saleId,
-        amount: referrerReturnPence,
-        remaining: referrerReturnPence,
-        status: 'active',
         expires_at: expiresAt,
-        source: 'referral_return',
-        settings_snapshot: {
-          expiry_days: database.settings.expiry_days,
-        },
-        reason: `Referral return from ${customer.name}'s first purchase`,
-        created_by_staff_id: staffId,
         created_at: new Date().toISOString(),
       });
+
+      // Record referral use
+      database.referral_uses.push({
+        id: crypto.randomUUID(),
+        code_id: appliedReferralCodeRow.id,
+        referrer_customer_id: referrerCustomer.id,
+        friend_customer_id: customer.id,
+        sale_id: saleId,
+        referrer_points: referrerPointsEarned,
+        friend_points: friendPointsEarned,
+        created_at: new Date().toISOString(),
+      });
+
+      referrerTotalPoints = this.getTotalPoints(database, referrerCustomer.id);
 
       const appUrl = process.env.APP_URL || '';
       messagingService.send(database, {
         customerId: referrerCustomer.id,
         kind: 'referral_return',
         data: {
-          amount: this.formatPounds(referrerReturnPence),
-          expiry: expiryDateStr,
+          amount: referrerPointsEarned,
+          points_balance: referrerTotalPoints,
           link: `${appUrl}/customer/${referrerCustomer.personal_token}`,
         },
       });
@@ -637,32 +452,14 @@ export class BusinessService {
     const customerLink = `${appUrl}/customer/${customer.personal_token}`;
 
     if (isNewCustomer) {
-      const ownCode = database.referral_codes.find((rc) => rc.owner_customer_id === customer!.id);
-      const friendDiscountStr = this.formatPounds(database.settings.friend_discount * 100);
-      const referrerRewardStr = this.formatPounds(database.settings.referrer_reward * 100);
-      const usedCode = !!appliedReferralCodeRow;
-
       messagingService.send(database, {
         customerId: customer.id,
-        kind: usedCode ? 'welcome_with_code' : 'welcome_no_code',
+        kind: appliedReferralCodeRow ? 'welcome_with_code' : 'welcome_no_code',
         data: {
           name: customer.name,
           link: customerLink,
-          friend_discount: friendDiscountStr,
-          referrer_reward: referrerRewardStr,
-        },
-      });
-    } else if (actualCreditUsedPence > 0) {
-      const remainingActivePence = database.credits
-        .filter((c) => c.customer_id === customer!.id && c.status === 'active' && c.remaining > 0)
-        .reduce((sum, c) => sum + c.remaining, 0);
-
-      messagingService.send(database, {
-        customerId: customer.id,
-        kind: 'credit_used',
-        data: {
-          used: this.formatPounds(actualCreditUsedPence),
-          balance: this.formatPounds(remainingActivePence),
+          friend_points: database.settings.friend_points,
+          referrer_points: database.settings.referrer_points,
         },
       });
     }
@@ -674,14 +471,70 @@ export class BusinessService {
       isNewCustomer,
       receiptRef: cleanReceiptRef,
       billAmountPounds: this.penceToPounds(billAmountPence),
-      discountAmountPounds: this.penceToPounds(friendDiscountPence),
-      creditUsedPounds: this.penceToPounds(actualCreditUsedPence),
-      finalAmountPounds: this.penceToPounds(billAmountPence - friendDiscountPence - actualCreditUsedPence),
+      finalAmountPounds: this.penceToPounds(billAmountPence),
       referralCodeUsed: appliedReferralCodeRow?.code || null,
+      friendPointsGiven: friendPointsEarned,
       referrerName: referrerCustomer?.name || null,
-      referrerReturnPounds: this.penceToPounds(referrerReturnPence),
-      messagesSent: database.messages.slice(0, 2),
+      referrerPointsGiven: referrerPointsEarned,
+      referrerTotalPoints,
     };
+  }
+
+  public static adjustPoints(
+    database: DatabaseSchema,
+    customerId: string,
+    pointsDelta: number,
+    reason: string,
+    staffId: string
+  ) {
+    if (!reason || !reason.trim()) {
+      throw new Error('Reason is required for manual points adjustment');
+    }
+
+    const customer = database.customers.find((c) => c.id === customerId);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const pointsExpiryDays = database.settings.points_expiry_days || 365;
+    const expiresAt = new Date(Date.now() + pointsExpiryDays * 86400000).toISOString();
+
+    if (pointsDelta > 0) {
+      database.credits.push({
+        id: crypto.randomUUID(),
+        customer_id: customer.id,
+        points: pointsDelta,
+        remaining: pointsDelta,
+        source: 'manual',
+        source_sale_id: null,
+        expires_at: expiresAt,
+        reason: reason.trim(),
+        created_by_staff_id: staffId,
+        created_at: new Date().toISOString(),
+      });
+    } else if (pointsDelta < 0) {
+      let needed = Math.abs(pointsDelta);
+      const activeLots = database.credits
+        .filter((c) => c.customer_id === customer.id && c.remaining > 0)
+        .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
+
+      for (const lot of activeLots) {
+        if (needed <= 0) break;
+        const deduct = Math.min(lot.remaining, needed);
+        lot.remaining -= deduct;
+        needed -= deduct;
+      }
+    }
+
+    database.audit_log.unshift({
+      id: crypto.randomUUID(),
+      staff_id: staffId,
+      action: 'points_adjusted',
+      details: { customerId, customerName: customer.name, pointsDelta, reason: reason.trim() },
+      created_at: new Date().toISOString(),
+    });
+
+    return { success: true, newTotalPoints: this.getTotalPoints(database, customer.id) };
   }
 
   public static runDailyJob(database: DatabaseSchema): { expired: number; remindersSent: number } {
@@ -690,12 +543,11 @@ export class BusinessService {
     let expiredCount = 0;
     let remindersSentCount = 0;
 
-    for (const credit of database.credits) {
-      if (credit.status === 'active' && credit.expires_at) {
-        const expDate = new Date(credit.expires_at);
+    for (const lot of database.credits) {
+      if (lot.remaining > 0 && lot.expires_at) {
+        const expDate = new Date(lot.expires_at);
         if (expDate <= now) {
-          credit.status = 'expired';
-          credit.remaining = 0;
+          lot.remaining = 0;
           expiredCount++;
         }
       }
@@ -704,21 +556,21 @@ export class BusinessService {
     const reminderDays = settings.reminder_days_before !== undefined ? settings.reminder_days_before : 7;
     if (reminderDays > 0) {
       const reminderWindowMs = reminderDays * 86400000;
-      for (const credit of database.credits) {
-        if (credit.status === 'active' && credit.remaining > 0 && credit.expires_at && !credit.expiring_notified) {
-          const expDate = new Date(credit.expires_at);
+      for (const lot of database.credits) {
+        if (lot.remaining > 0 && lot.expires_at && !lot.expiring_notified) {
+          const expDate = new Date(lot.expires_at);
           const msUntilExpiry = expDate.getTime() - now.getTime();
           if (msUntilExpiry > 0 && msUntilExpiry <= reminderWindowMs) {
-            credit.expiring_notified = true;
+            lot.expiring_notified = true;
             remindersSentCount++;
 
-            const cust = database.customers.find((c) => c.id === credit.customer_id);
+            const cust = database.customers.find((c) => c.id === lot.customer_id);
             if (cust) {
               messagingService.send(database, {
                 customerId: cust.id,
                 kind: 'credit_expiring',
                 data: {
-                  amount: this.formatPounds(credit.remaining),
+                  amount: lot.remaining,
                   expiry: this.formatShortDate(expDate.toISOString()),
                 },
               });

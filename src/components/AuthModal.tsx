@@ -7,9 +7,10 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLoginSuccess: (user: StaffUser) => void;
+  canClose?: boolean;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess, canClose = true }) => {
   const [username, setUsername] = useState('cashier');
   const [password, setPassword] = useState('change-me');
   const [error, setError] = useState<string | null>(null);
@@ -51,12 +52,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
               <p className="text-xs text-rose-200">Staff login</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-rose-300 hover:text-white hover:bg-rose-900 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {canClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg text-rose-300 hover:text-white hover:bg-rose-900 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">

@@ -63,12 +63,12 @@ export class AuthService {
 
     database.settings = {
       scheme_enabled: true,
-      friend_discount: 5,
-      referrer_reward: 5,
-      min_spend: 20,
-      expiry_days: 90,
+      referrer_points: 100,
+      friend_points: 50,
+      min_spend: 10,
+      points_expiry_days: 365,
+      referral_limit: null,
       reminder_days_before: 7,
-      max_credit_share: 50,
       shop_name: 'Your Business',
       updated_at: new Date().toISOString(),
       updated_by: 'Owner',
@@ -103,7 +103,6 @@ export class AuthService {
     database.referral_codes = [];
     database.sales = [];
     database.credits = [];
-    database.credit_redemptions = [];
     database.messages = [];
     database.otp_codes = [];
     database.redemption_tokens = [];

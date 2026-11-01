@@ -60,40 +60,44 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-rose-200 selection:text-rose-950">
-      <Navbar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-        currentUser={currentUser}
-        setCurrentUser={setCurrentUser}
-        onOpenLogin={() => setAuthModalOpen(true)}
-        shopName={shopName}
-      />
+    <div className="relative min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-rose-200 selection:text-rose-950">
+      <div className={!currentUser ? 'filter blur-md pointer-events-none select-none flex-1 flex flex-col' : 'flex-1 flex flex-col'}>
+        <Navbar
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
+          onOpenLogin={() => setAuthModalOpen(true)}
+          shopName={shopName}
+        />
 
-      <main className="flex-1">
-        {currentTab === 'cashier' && (
-          <CashierPortal
-            currentUser={currentUser}
-            onOpenLogin={() => setAuthModalOpen(true)}
-            onViewCustomerPortal={handleViewCustomerPortal}
-          />
-        )}
+        <main className="flex-1">
+          {currentTab === 'cashier' && (
+            <CashierPortal
+              currentUser={currentUser}
+              onOpenLogin={() => setAuthModalOpen(true)}
+              onViewCustomerPortal={handleViewCustomerPortal}
+            />
+          )}
 
-        {currentTab === 'owner' && (
-          <OwnerPortal
-            onViewCustomerPortal={handleViewCustomerPortal}
-            setCurrentUser={setCurrentUser}
-            onSettingsUpdated={(newShopName: string) => setShopName(newShopName)}
-            onOpenLogin={() => setAuthModalOpen(true)}
-          />
-        )}
-      </main>
+          {currentTab === 'owner' && (
+            <OwnerPortal
+              onViewCustomerPortal={handleViewCustomerPortal}
+              setCurrentUser={setCurrentUser}
+              onSettingsUpdated={(newShopName: string) => setShopName(newShopName)}
+              onOpenLogin={() => setAuthModalOpen(true)}
+            />
+          )}
+        </main>
+      </div>
 
       <AuthModal
-        isOpen={authModalOpen}
+        isOpen={!currentUser || authModalOpen}
+        canClose={!!currentUser}
         onClose={() => setAuthModalOpen(false)}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
+          setAuthModalOpen(false);
           if (user.role === 'owner') {
             setCurrentTab('owner');
           }

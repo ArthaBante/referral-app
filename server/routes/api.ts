@@ -147,16 +147,14 @@ apiRouter.get('/cashier/lookup-customer', requireStaff, (req: Request, res: Resp
       });
     }
 
-    const activeCreditPence = snapshot.credits
-      .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
-      .reduce((sum, c) => sum + c.remaining, 0);
+    const totalPoints = BusinessService.getTotalPoints(snapshot, customer.id);
 
     return res.json({
       exists: true,
       customerId: customer.id,
       name: customer.name,
       formattedPhone: BusinessService.formatUkPhone(customer.phone),
-      activeCreditPounds: BusinessService.penceToPounds(activeCreditPence),
+      totalPoints,
       marketingConsent: customer.marketing_consent && !customer.opted_out_at,
     });
   } catch (err: any) {
@@ -171,9 +169,13 @@ apiRouter.post('/cashier/validate-referral', requireStaff, (req: Request, res: R
       return res.status(400).json({ error: 'Code and buyer phone are required' });
     }
 
-    const billAmountPence = billAmountPounds !== undefined ? BusinessService.poundsToPence(Number(billAmountPounds)) : undefined;
     const snapshot = db.getSnapshot();
-    const check = BusinessService.validateReferralCode(snapshot, code, buyerPhone, billAmountPence);
+    const check = BusinessService.validateReferralCode(
+      snapshot,
+      code,
+      buyerPhone,
+      billAmountPounds !== undefined ? Number(billAmountPounds) : undefined
+    );
 
     if (!check.valid) {
       return res.json({
@@ -182,124 +184,18 @@ apiRouter.post('/cashier/validate-referral', requireStaff, (req: Request, res: R
       });
     }
 
-    const friendDiscountPounds = snapshot.settings.friend_discount;
-    const referrerRewardPounds = check.referralCode ? BusinessService.penceToPounds(check.referralCode.referrer_return_amount) : snapshot.settings.referrer_reward;
-
     return res.json({
       valid: true,
       code: check.referralCode?.code,
       ownerName: check.ownerCustomer?.name,
-      friendDiscountPounds,
-      referrerRewardPounds,
+      friendPoints: check.friendPoints,
+      referrerPoints: check.referrerPoints,
     });
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
   }
 });
 
-apiRouter.post('/cashier/request-otp', requireStaff, (req: Request, res: Response) => {
-  try {
-    const { customerId } = req.body;
-    if (!customerId) {
-      return res.status(400).json({ error: 'Customer ID is required' });
-    }
-
-    const result = db.transaction((database) => {
-      return BusinessService.requestOtp(database, customerId);
-    });
-
-    return res.json(result);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-apiRouter.post('/cashier/verify-otp', requireStaff, (req: Request, res: Response) => {
-  try {
-    const { customerId, otp } = req.body;
-    if (!customerId || !otp) {
-      return res.status(400).json({ error: 'Customer ID and OTP are required' });
-    }
-
-    const result = db.transaction((database) => {
-      return BusinessService.verifyOtp(database, customerId, otp);
-    });
-
-    return res.json(result);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-apiRouter.post('/cashier/verify-personal-qr', requireStaff, (req: Request, res: Response) => {
-  try {
-    const { customerId, scannedTokenOrUrl } = req.body;
-    if (!customerId || !scannedTokenOrUrl) {
-      return res.status(400).json({ error: 'Customer ID and scanned token are required' });
-    }
-
-    const result = db.transaction((database) => {
-      return BusinessService.verifyPersonalQr(database, customerId, scannedTokenOrUrl);
-    });
-
-    return res.json(result);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-apiRouter.post('/cashier/calculate-bill', requireStaff, (req: Request, res: Response) => {
-  try {
-    const { phone, billAmountPounds, referralCode, useCredit, verified } = req.body;
-    if (!phone || billAmountPounds === undefined) {
-      return res.status(400).json({ error: 'Phone and bill amount are required' });
-    }
-
-    const normalizedPhone = BusinessService.normalizeUkPhone(phone);
-    const billAmountPence = BusinessService.poundsToPence(Number(billAmountPounds));
-    const snapshot = db.getSnapshot();
-
-    let discountPence = 0;
-    let creditUsedPence = 0;
-    let instructions = '';
-
-    const existingCustomer = snapshot.customers.find((c) => c.phone === normalizedPhone);
-
-    if (referralCode && !existingCustomer) {
-      const check = BusinessService.validateReferralCode(snapshot, referralCode, normalizedPhone, billAmountPence);
-      if (check.valid && check.ownerCustomer) {
-        discountPence = snapshot.settings.friend_discount * 100;
-        const discountPoundsStr = (snapshot.settings.friend_discount).toFixed(2);
-        const returnPoundsStr = BusinessService.penceToPounds(check.referralCode?.referrer_return_amount || snapshot.settings.referrer_reward * 100).toFixed(2);
-        instructions = `Code valid. Take £${discountPoundsStr} off at the till. ${check.ownerCustomer.name} gets £${returnPoundsStr} back.`;
-      } else if (!check.valid) {
-        throw new Error(check.reason || 'Invalid referral code');
-      }
-    }
-
-    if (useCredit && existingCustomer && verified) {
-      const effectiveBill = billAmountPence - discountPence;
-      const usable = BusinessService.calculateUsableCredit(snapshot, existingCustomer.id, effectiveBill);
-      creditUsedPence = usable.maxUsableCredit;
-      const creditPounds = BusinessService.penceToPounds(creditUsedPence);
-      if (creditPounds > 0) {
-        instructions = `Take £${creditPounds.toFixed(2)} credit off at the till.`;
-      }
-    }
-
-    const finalPayablePence = billAmountPence - discountPence - creditUsedPence;
-
-    return res.json({
-      billAmountPounds: BusinessService.penceToPounds(billAmountPence),
-      discountAmountPounds: BusinessService.penceToPounds(discountPence),
-      creditUsedPounds: BusinessService.penceToPounds(creditUsedPence),
-      finalPayablePounds: BusinessService.penceToPounds(Math.max(0, finalPayablePence)),
-      instructions: instructions || 'No referral discount or credit applied.',
-    });
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message });
-  }
-});
 
 apiRouter.post('/cashier/save-sale', requireStaff, (req: Request, res: Response) => {
   try {
@@ -325,7 +221,6 @@ apiRouter.get('/cashier/find-sale', requireStaff, (req: Request, res: Response) 
         customerName: customer?.name || 'Unknown',
         customerPhone: customer ? BusinessService.formatUkPhone(customer.phone) : '',
         billAmountPounds: BusinessService.penceToPounds(s.bill_amount),
-        creditUsedPounds: BusinessService.penceToPounds(s.credit_used),
       };
     });
 
@@ -351,57 +246,23 @@ apiRouter.get('/cashier/find-sale', requireStaff, (req: Request, res: Response) 
 
 apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) => {
   try {
-    const { from, to } = req.query;
     const snapshot = db.getSnapshot();
-
-    const fromDate = from ? new Date(from as string) : new Date(0);
-    const toDate = to ? new Date(to as string) : new Date(8640000000000000);
-
-    const filteredSales = snapshot.sales.filter((s) => {
-      const dt = new Date(s.created_at);
-      return dt >= fromDate && dt <= toDate;
-    });
 
     const totalCustomers = snapshot.customers.length;
     const referralCustomers = snapshot.customers.filter((c) => c.referred_by_customer_id).length;
-    const referralCodesUsed = snapshot.referral_codes.filter((rc) => rc.status === 'used').length;
+    const referralCodesUsed = snapshot.referral_uses.length;
 
-    let returnsPaidPence = 0;
-    let discountsGivenPence = 0;
-    let creditOutstandingPence = 0;
-    let creditExpiredPence = 0;
+    let pointsGivenReferrals = 0;
+    let welcomePointsGiven = 0;
 
-    for (const c of snapshot.credits) {
-      if (c.source === 'referral_return') {
-        returnsPaidPence += c.amount;
-      }
-      if (c.status === 'active') {
-        creditOutstandingPence += c.remaining;
-      } else if (c.status === 'expired') {
-        creditExpiredPence += c.amount;
-      }
+    for (const u of snapshot.referral_uses) {
+      pointsGivenReferrals += u.referrer_points;
+      welcomePointsGiven += u.friend_points;
     }
-
-    for (const s of filteredSales) {
-      if (s.discount_amount) {
-        discountsGivenPence += s.discount_amount;
-      }
-    }
-
-    const creditRedeemedPence = snapshot.credit_redemptions.reduce((sum, r) => sum + r.amount, 0);
-
-    const referredCustomerIds = new Set(
-      snapshot.customers.filter((c) => c.referred_by_customer_id).map((c) => c.id)
-    );
-    const salesFromReferredCustomersPence = filteredSales
-      .filter((s) => referredCustomerIds.has(s.customer_id))
-      .reduce((sum, s) => sum + s.bill_amount, 0);
 
     const referrerCounts: Record<string, number> = {};
-    for (const rc of snapshot.referral_codes) {
-      if (rc.status === 'used') {
-        referrerCounts[rc.owner_customer_id] = (referrerCounts[rc.owner_customer_id] || 0) + 1;
-      }
+    for (const u of snapshot.referral_uses) {
+      referrerCounts[u.referrer_customer_id] = (referrerCounts[u.referrer_customer_id] || 0) + 1;
     }
 
     const topReferrers = Object.entries(referrerCounts)
@@ -421,12 +282,8 @@ apiRouter.get('/owner/dashboard', requireOwner, (req: Request, res: Response) =>
       totalCustomers,
       referralCustomers,
       referralCodesUsed,
-      discountsGivenPounds: BusinessService.penceToPounds(discountsGivenPence),
-      returnsPaidPounds: BusinessService.penceToPounds(returnsPaidPence),
-      creditRedeemedPounds: BusinessService.penceToPounds(creditRedeemedPence),
-      creditOutstandingPounds: BusinessService.penceToPounds(creditOutstandingPence),
-      creditExpiredPounds: BusinessService.penceToPounds(creditExpiredPence),
-      salesFromReferredCustomersPounds: BusinessService.penceToPounds(salesFromReferredCustomersPence),
+      pointsGivenReferrals,
+      welcomePointsGiven,
       topReferrers,
     });
   } catch (err: any) {
@@ -450,12 +307,12 @@ apiRouter.post('/owner/settings', requireOwner, (req: Request, res: Response) =>
       database.settings = {
         ...database.settings,
         scheme_enabled: validated.scheme_enabled !== undefined ? validated.scheme_enabled : database.settings.scheme_enabled,
-        friend_discount: validated.friend_discount,
-        referrer_reward: validated.referrer_reward,
+        referrer_points: validated.referrer_points,
+        friend_points: validated.friend_points,
         min_spend: validated.min_spend,
-        expiry_days: validated.expiry_days,
+        points_expiry_days: validated.points_expiry_days,
+        referral_limit: validated.referral_limit,
         reminder_days_before: validated.reminder_days_before,
-        max_credit_share: validated.max_credit_share,
         shop_name: validated.shop_name || database.settings.shop_name,
         updated_at: new Date().toISOString(),
         updated_by: session.staff.name,
@@ -484,22 +341,19 @@ apiRouter.get('/owner/customers', requireOwner, (req: Request, res: Response) =>
     const snapshot = db.getSnapshot();
 
     const list = snapshot.customers.map((c) => {
-      const activeCreditPence = snapshot.credits
-        .filter((cr) => cr.customer_id === c.id && cr.status === 'active' && cr.remaining > 0)
-        .reduce((sum, cr) => sum + cr.remaining, 0);
-
+      const totalPoints = BusinessService.getTotalPoints(snapshot, c.id);
+      const friendsReferred = BusinessService.getFriendsReferredCount(snapshot, c.id);
       const referralCode = snapshot.referral_codes.find((rc) => rc.owner_customer_id === c.id);
 
       return {
         id: c.id,
         name: c.name,
         phone: BusinessService.formatUkPhone(c.phone),
-        activeCreditPounds: BusinessService.penceToPounds(activeCreditPence),
+        totalPoints,
+        friendsReferred,
         marketingConsent: c.marketing_consent && !c.opted_out_at,
         joinedDate: c.created_at,
         referralCode: referralCode?.code || 'None',
-        referralCodeUsed: referralCode?.status === 'used',
-        promisedReturnPounds: referralCode ? BusinessService.penceToPounds(referralCode.referrer_return_amount) : 0,
         personalToken: c.personal_token,
       };
     });
@@ -532,24 +386,23 @@ apiRouter.get('/owner/customers/:id', requireOwner, (req: Request, res: Response
       .map((s) => ({
         ...s,
         billAmountPounds: BusinessService.penceToPounds(s.bill_amount),
-        creditUsedPounds: BusinessService.penceToPounds(s.credit_used),
       }))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     const credits = snapshot.credits
       .filter((c) => c.customer_id === customer.id)
-      .map((c) => ({
-        ...c,
-        amountPounds: BusinessService.penceToPounds(c.amount),
-        remainingPounds: BusinessService.penceToPounds(c.remaining),
-      }))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const totalPoints = BusinessService.getTotalPoints(snapshot, customer.id);
+    const friendsReferred = BusinessService.getFriendsReferredCount(snapshot, customer.id);
 
     return res.json({
       customer: {
         ...customer,
         phone: BusinessService.formatUkPhone(customer.phone),
       },
+      totalPoints,
+      friendsReferred,
       referralCode,
       sales,
       credits,
@@ -559,74 +412,40 @@ apiRouter.get('/owner/customers/:id', requireOwner, (req: Request, res: Response
   }
 });
 
+apiRouter.post('/owner/customers/:id/points-adjustment', requireOwner, (req: Request, res: Response) => {
+  try {
+    const session = (req as any).session as UserSession;
+    const { id } = req.params;
+    const { pointsDelta, amountPounds, reason } = req.body;
+    const val = pointsDelta !== undefined ? Number(pointsDelta) : Number(amountPounds);
+
+    if (isNaN(val) || val === 0 || !reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Adjustment points amount and a valid reason are required.' });
+    }
+
+    const result = db.transaction((database) => {
+      return BusinessService.adjustPoints(database, id, val, reason, session.staff.id);
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
 apiRouter.post('/owner/customers/:id/credit-adjustment', requireOwner, (req: Request, res: Response) => {
   try {
     const session = (req as any).session as UserSession;
     const { id } = req.params;
-    const { amountPounds, reason } = req.body;
+    const { pointsDelta, amountPounds, reason } = req.body;
+    const val = pointsDelta !== undefined ? Number(pointsDelta) : Number(amountPounds);
 
-    if (!amountPounds || !reason || !reason.trim()) {
-      return res.status(400).json({ error: 'Adjustment amount (£) and a valid reason are required.' });
-    }
-
-    const amountPence = BusinessService.poundsToPence(Number(amountPounds));
-    if (amountPence === 0) {
-      return res.status(400).json({ error: 'Adjustment cannot be zero' });
+    if (isNaN(val) || val === 0 || !reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Adjustment points amount and a valid reason are required.' });
     }
 
     const result = db.transaction((database) => {
-      const customer = database.customers.find((c) => c.id === id);
-      if (!customer) {
-        throw new Error('Customer not found');
-      }
-
-      const now = new Date();
-      if (amountPence > 0) {
-        const expiryDays = database.settings.expiry_days || 90;
-        const expiresAt = new Date(now.getTime() + expiryDays * 86400000).toISOString();
-
-        database.credits.push({
-          id: crypto.randomUUID(),
-          customer_id: customer.id,
-          source_sale_id: null,
-          amount: amountPence,
-          remaining: amountPence,
-          status: 'active',
-          expires_at: expiresAt,
-          source: 'manual',
-          settings_snapshot: { expiry_days: expiryDays },
-          reason: reason.trim(),
-          created_by_staff_id: session.staff.id,
-          created_at: now.toISOString(),
-        });
-      } else {
-        let deductNeeded = Math.abs(amountPence);
-        const activeLots = database.credits
-          .filter((c) => c.customer_id === customer.id && c.status === 'active' && c.remaining > 0)
-          .sort((a, b) => new Date(a.expires_at || 0).getTime() - new Date(b.expires_at || 0).getTime());
-
-        for (const lot of activeLots) {
-          if (deductNeeded <= 0) break;
-          const take = Math.min(lot.remaining, deductNeeded);
-          lot.remaining -= take;
-          deductNeeded -= take;
-        }
-      }
-
-      database.audit_log.unshift({
-        id: crypto.randomUUID(),
-        staff_id: session.staff.id,
-        action: 'manual_credit_adjustment',
-        details: {
-          customerId: customer.id,
-          customerName: customer.name,
-          amountPounds: Number(amountPounds),
-          reason: reason.trim(),
-        },
-        created_at: now.toISOString(),
-      });
-
-      return { success: true };
+      return BusinessService.adjustPoints(database, id, val, reason, session.staff.id);
     });
 
     return res.json(result);
@@ -673,19 +492,17 @@ apiRouter.get('/owner/export-csv', requireOwner, (req: Request, res: Response) =
   try {
     const snapshot = db.getSnapshot();
     const rows = [
-      ['Customer ID', 'Name', 'Phone', 'Active Credit (£)', 'Offers Consent', 'Joined Date'],
+      ['Customer ID', 'Name', 'Phone', 'Total Points', 'Offers Consent', 'Joined Date'],
     ];
 
     for (const c of snapshot.customers) {
-      const activePence = snapshot.credits
-        .filter((cr) => cr.customer_id === c.id && cr.status === 'active')
-        .reduce((sum, cr) => sum + cr.remaining, 0);
+      const activePoints = BusinessService.getTotalPoints(snapshot, c.id);
 
       rows.push([
         c.id,
         `"${c.name.replace(/"/g, '""')}"`,
         BusinessService.formatUkPhone(c.phone),
-        String(BusinessService.penceToPounds(activePence).toFixed(2)),
+        String(activePoints),
         c.marketing_consent && !c.opted_out_at ? 'YES' : 'NO',
         c.created_at,
       ]);

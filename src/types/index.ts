@@ -9,12 +9,11 @@ export interface CustomerListItem {
   id: string;
   name: string;
   phone: string;
-  activeCreditPounds: number;
+  totalPoints: number;
+  friendsReferred: number;
   marketingConsent: boolean;
   joinedDate: string;
   referralCode: string;
-  referralCodeUsed: boolean;
-  promisedReturnPounds: number;
   personalToken: string;
 }
 
@@ -24,22 +23,23 @@ export interface CustomerPortalData {
   fullName: string;
   personalToken: string;
   personalQrDataUri: string;
-  totalActiveCreditPounds: number;
+  totalPoints: number;
+  friendsReferred: number;
   activeLots: Array<{
     id: string;
-    amountPounds: number;
-    remainingPounds: number;
+    points: number;
+    remaining: number;
     source: string;
     expiresAt: string | null;
     daysLeft: number | null;
   }>;
   referralCode: {
     code: string;
-    status: 'unused' | 'used';
     qrDataUri: string;
     whatsappShareUrl: string;
-    friendDiscountPounds: number;
-    referrerRewardPounds: number;
+    friendPoints: number;
+    referrerPoints: number;
+    minSpend: number;
   } | null;
   marketingConsent: boolean;
   optedOut: boolean;
@@ -49,12 +49,9 @@ export interface OwnerDashboardData {
   totalCustomers: number;
   referralCustomers: number;
   referralCodesUsed: number;
-  discountsGivenPounds: number;
-  returnsPaidPounds: number;
-  creditRedeemedPounds: number;
-  creditOutstandingPounds: number;
-  creditExpiredPounds: number;
-  salesFromReferredCustomersPounds: number;
+  pointsGivenReferrals: number;
+  welcomePointsGiven: number;
+  friendsReferredTotal: number;
   topReferrers: Array<{
     customerId: string;
     name: string;
@@ -65,12 +62,11 @@ export interface OwnerDashboardData {
 
 export interface SettingsData {
   scheme_enabled: boolean;
-  friend_discount: number;
-  referrer_reward: number;
+  referrer_points: number;
+  friend_points: number;
   min_spend: number;
-  expiry_days: number;
-  reminder_days_before: number;
-  max_credit_share: number;
+  points_expiry_days: number;
+  referral_limit: number | null;
   shop_name: string;
   updated_at: string;
   updated_by: string;
@@ -83,8 +79,6 @@ export interface SaleItem {
   customerPhone: string;
   receipt_ref: string | null;
   billAmountPounds: number;
-  discountAmountPounds?: number;
-  creditUsedPounds: number;
   referral_code_id: string | null;
   staff_id: string;
   created_at: string;

@@ -17,22 +17,15 @@ export interface ReferralCode {
   id: string;
   code: string;
   owner_customer_id: string;
-  status: 'unused' | 'used';
-  used_by_customer_id: string | null;
-  used_sale_id: string | null;
-  used_at: string | null;
-  issued_sale_id?: string;
-  referrer_return_amount: number; // pence
-  return_settings_snapshot?: Record<string, any>;
+  created_at?: string;
 }
 
 export interface Sale {
   id: string;
   customer_id: string;
   receipt_ref: string | null;
-  bill_amount: number; // pence (full price)
+  bill_amount: number; // pence
   discount_amount: number; // pence
-  credit_used: number; // pence
   referral_code_id: string | null;
   staff_id: string;
   created_at: string;
@@ -41,31 +34,32 @@ export interface Sale {
 export interface Credit {
   id: string;
   customer_id: string;
+  points: number;
+  remaining: number;
+  source: 'referral' | 'welcome' | 'manual';
   source_sale_id: string | null;
-  amount: number; // pence
-  remaining: number; // pence
-  status: 'active' | 'expired' | 'cancelled';
   expires_at: string | null;
-  source: 'referral_return' | 'friend_credit' | 'manual';
-  settings_snapshot: Record<string, any>;
-  reason: string | null;
-  created_by_staff_id: string | null;
   expiring_notified?: boolean;
+  reason?: string | null;
+  created_by_staff_id?: string | null;
   created_at: string;
 }
 
-export interface CreditRedemption {
+export interface ReferralUse {
   id: string;
-  credit_id: string;
+  code_id: string;
+  referrer_customer_id: string;
+  friend_customer_id: string;
   sale_id: string;
-  amount: number; // pence
+  referrer_points: number;
+  friend_points: number;
   created_at: string;
 }
 
 export interface MessageRecord {
   id: string;
   customer_id: string;
-  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'credit_used' | 'otp' | 'offer';
+  kind: 'welcome' | 'welcome_no_code' | 'welcome_with_code' | 'referral_return' | 'credit_expiring' | 'offer';
   channel: 'dev' | 'sms' | 'whatsapp';
   body: string;
   status: 'sent' | 'failed';
@@ -78,7 +72,7 @@ export interface OtpCode {
   id: string;
   customer_id: string;
   code_hash: string;
-  code_plain?: string; // stored for dev mode testing
+  code_plain?: string;
   expires_at: string;
   attempts: number;
   used_at: string | null;
@@ -96,12 +90,12 @@ export interface RedemptionToken {
 
 export interface Settings {
   scheme_enabled: boolean;
-  friend_discount: number; // £
-  referrer_reward: number; // £
-  min_spend: number; // £
-  expiry_days: number;
-  reminder_days_before: number;
-  max_credit_share: number;
+  referrer_points: number; // default 100
+  friend_points: number;   // default 50
+  min_spend: number;       // default 10 (£)
+  points_expiry_days: number; // default 365
+  referral_limit: number | null; // default null
+  reminder_days_before: number; // default 7
   shop_name: string;
   updated_at: string;
   updated_by: string;
@@ -131,8 +125,6 @@ export type MessageTemplateKind =
   | 'welcome_with_code'
   | 'referral_return'
   | 'credit_expiring'
-  | 'credit_used'
-  | 'otp'
   | 'offer_footer';
 
 export interface MessageTemplate {
@@ -148,7 +140,7 @@ export interface DatabaseSchema {
   referral_codes: ReferralCode[];
   sales: Sale[];
   credits: Credit[];
-  credit_redemptions: CreditRedemption[];
+  referral_uses: ReferralUse[];
   messages: MessageRecord[];
   otp_codes: OtpCode[];
   redemption_tokens: RedemptionToken[];
@@ -168,18 +160,18 @@ export function getDefaultDatabaseSchema(): DatabaseSchema {
     referral_codes: [],
     sales: [],
     credits: [],
-    credit_redemptions: [],
+    referral_uses: [],
     messages: [],
     otp_codes: [],
     redemption_tokens: [],
     settings: {
       scheme_enabled: true,
-      friend_discount: 5,
-      referrer_reward: 5,
-      min_spend: 20,
-      expiry_days: 90,
+      referrer_points: 100,
+      friend_points: 50,
+      min_spend: 10,
+      points_expiry_days: 365,
+      referral_limit: null,
       reminder_days_before: 7,
-      max_credit_share: 50,
       shop_name: 'Your Business',
       updated_at: now,
       updated_by: 'system',
@@ -210,15 +202,13 @@ class Database {
         const parsed = JSON.parse(raw);
         if (!parsed.redemption_tokens) parsed.redemption_tokens = [];
         if (!parsed.message_templates) parsed.message_templates = [];
-        if (parsed.settings && parsed.settings.friend_discount === undefined) {
+        if (!parsed.referral_uses) parsed.referral_uses = [];
+        if (parsed.settings && parsed.settings.referrer_points === undefined) {
           const def = getDefaultDatabaseSchema();
           parsed.settings = {
             ...def.settings,
             shop_name: parsed.settings.shop_name || def.settings.shop_name,
             scheme_enabled: parsed.settings.scheme_enabled ?? def.settings.scheme_enabled,
-            expiry_days: parsed.settings.expiry_days ?? def.settings.expiry_days,
-            reminder_days_before: parsed.settings.reminder_days_before ?? def.settings.reminder_days_before,
-            max_credit_share: parsed.settings.max_credit_share ?? def.settings.max_credit_share,
           };
         }
         return parsed;
@@ -288,7 +278,6 @@ class Database {
       database.referral_codes = def.referral_codes;
       database.sales = def.sales;
       database.credits = def.credits;
-      database.credit_redemptions = def.credit_redemptions;
       database.messages = def.messages;
       database.otp_codes = def.otp_codes;
       database.redemption_tokens = def.redemption_tokens;

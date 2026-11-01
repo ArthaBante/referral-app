@@ -99,21 +99,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
 
             <div className="mt-5 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 text-center">
               <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 block">
-                Your account balance
+                Your Points Balance
               </span>
-              <span className="text-3xl font-black text-white mt-1 block">£{data.totalActiveCreditPounds.toFixed(2)}</span>
-              <span className="text-[11px] text-rose-200 block mt-0.5">Store credit ready to use at counter</span>
+              <span className="text-3xl font-black text-white mt-1 block">{data.totalPoints} points</span>
+              <span className="text-[11px] text-rose-200 block mt-1">Friends Referred: {data.friendsReferred}</span>
             </div>
 
-            {data.activeLots.length > 0 && (
+            {data.activeLots && data.activeLots.length > 0 && (
               <div className="mt-3 text-left bg-black/20 p-2.5 rounded-xl border border-white/5 space-y-1">
                 <div className="text-[10px] font-bold text-amber-300 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  <span>Credit Expiry Timeline:</span>
+                  <span>Points Expiry Timeline:</span>
                 </div>
                 {data.activeLots.map((lot) => (
                   <div key={lot.id} className="text-[11px] text-rose-100 flex items-center justify-between">
-                    <span>£{lot.remainingPounds.toFixed(2)} balance</span>
+                    <span>{lot.remaining} points ({lot.source})</span>
                     <span className="text-amber-300 font-medium">
                       Expires {lot.expiresAt ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(lot.expiresAt)) : 'Soon'} (
                       {lot.daysLeft} days)
@@ -130,7 +130,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               <span>Personal Pass QR</span>
             </div>
             <p className="text-xs text-neutral-500 font-medium mb-4">
-              Show this at the billing counter to redeem your store credit
+              Show this at the billing counter when visiting
             </p>
 
             <div className="inline-block p-3 bg-neutral-50 rounded-2xl border-2 border-neutral-200 shadow-inner">
@@ -143,7 +143,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
 
             <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-emerald-800 font-semibold bg-emerald-50 py-1.5 px-3 rounded-full border border-emerald-200 w-fit mx-auto">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Secure Token Verification</span>
+              <span>Member Card Active</span>
             </div>
           </div>
 
@@ -152,23 +152,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
               <div className="inline-block px-3 py-1 bg-amber-100 text-amber-900 rounded-full text-[11px] font-black uppercase tracking-wider mb-2">
                 Referral Reward
               </div>
-              <h2 className="text-lg font-black text-rose-950">Refer a Friend</h2>
+              <h2 className="text-lg font-black text-rose-950">Refer Friends</h2>
               <p className="text-xs text-neutral-700 mt-1 max-w-xs mx-auto font-medium">
-                Give a friend £{data.referralCode.friendDiscountPounds} off their first visit. You get £{data.referralCode.referrerRewardPounds} back.
+                Give friends {data.referralCode.friendPoints} welcome points on their first visit. You get {data.referralCode.referrerPoints} points when they spend at least £{data.referralCode.minSpend}.
               </p>
-
-              <div className="my-3">
-                {data.referralCode.status === 'unused' ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Unused: Share with one friend</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold bg-neutral-200 text-neutral-700 px-3 py-1 rounded-full border border-neutral-300">
-                    <span>Used: Thank you for referring!</span>
-                  </span>
-                )}
-              </div>
 
               <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 flex items-center justify-center gap-3 my-3">
                 <span className="text-3xl font-mono font-black text-rose-950 tracking-widest">
@@ -191,21 +178,19 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ initialToken }) 
                     alt="Referral QR Code"
                     className="w-36 h-36 mx-auto object-contain border border-neutral-200 rounded-xl p-1 bg-white"
                   />
-                  <span className="text-[10px] text-neutral-400 mt-1 block">Friend can scan this at the counter</span>
+                  <span className="text-[10px] text-neutral-400 mt-1 block">Friends can scan this at the counter</span>
                 </div>
               )}
 
-              {data.referralCode.status === 'unused' && (
-                <a
-                  href={data.referralCode.whatsappShareUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Share2 className="w-4 h-4" />
-                  <span>Share on WhatsApp</span>
-                </a>
-              )}
+              <a
+                href={data.referralCode.whatsappShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share on WhatsApp</span>
+              </a>
             </div>
           )}
 

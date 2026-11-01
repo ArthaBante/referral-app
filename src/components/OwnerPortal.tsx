@@ -30,14 +30,12 @@ import {
 const getSamplePreviewData = (shopName?: string): Record<string, string> => ({
   shop: shopName || 'Your Business',
   name: 'Emma',
-  amount: '£5.00',
+  friend_points: '50',
+  referrer_points: '100',
+  points_balance: '300',
+  min_spend: '10',
   expiry: '15 Jan',
-  used: '£5.00',
-  balance: '£5.00',
-  otp: '482913',
   link: 'ref-frnd.uk/c/abc123',
-  friend_discount: '£5.00',
-  referrer_reward: '£5.00',
 });
 
 const TEMPLATE_KINDS_ORDER: MessageTemplateKind[] = [
@@ -449,27 +447,25 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
   const calculateLiveExample = () => {
     if (!settings) return '';
-    const fd = settings.friend_discount ?? 5;
-    const rr = settings.referrer_reward ?? 5;
-    const paid = 40 - fd;
-    return `If Sophie uses Emma's code and spends £40: Sophie pays £${paid}, Emma gets £${rr} back.`;
+    const fp = settings.friend_points ?? 50;
+    const rp = settings.referrer_points ?? 100;
+    const ms = settings.min_spend ?? 10;
+    return `If Sophie uses Emma's code: Sophie gets ${fp} welcome points, Emma gets ${rp} points when Sophie spends at least £${ms}.`;
   };
 
-
-
-  const handleCreditAdjustment = async () => {
+  const handlePointsAdjustment = async () => {
     if (!selectedCustomerId || !adjAmount || !adjReason.trim()) {
-      alert('Please enter amount and reason');
+      alert('Please enter points delta and reason');
       return;
     }
     setAdjLoading(true);
     try {
-      await ApiClient.adjustCredit(selectedCustomerId, parseFloat(adjAmount), adjReason.trim());
+      await ApiClient.adjustPoints(selectedCustomerId, parseInt(adjAmount), adjReason.trim());
       setAdjAmount('');
       setAdjReason('');
       loadCustomerDetail(selectedCustomerId);
       loadCustomers();
-      alert('Credit adjustment saved!');
+      alert('Points adjustment saved!');
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -608,7 +604,6 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 ))}
               </div>
             </div>
-
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -627,51 +622,33 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs">
               <span className="text-xs font-semibold text-neutral-500 uppercase">Codes Used</span>
               <div className="text-2xl font-black text-neutral-900 mt-1">{dashboard.referralCodesUsed}</div>
-              <span className="text-[11px] text-neutral-400">Single-use redemptions</span>
+              <span className="text-[11px] text-neutral-400">Redemptions recorded</span>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs bg-emerald-50/40">
-              <span className="text-xs font-semibold text-emerald-800 uppercase">Referred Sales (£)</span>
-              <div className="text-2xl font-black text-emerald-900 mt-1">£{dashboard.salesFromReferredCustomersPounds.toFixed(2)}</div>
-              <span className="text-[11px] text-emerald-700 font-medium">New customer revenue</span>
+              <span className="text-xs font-semibold text-emerald-800 uppercase">Friends Referred</span>
+              <div className="text-2xl font-black text-emerald-900 mt-1">{dashboard.friendsReferredTotal}</div>
+              <span className="text-[11px] text-emerald-700 font-medium">Successful referrals</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-xs">
             <h3 className="text-sm font-bold text-rose-950 uppercase tracking-wider mb-4 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>Store Credit Financial Ledger</span>
+              <span>Points Program Ledger</span>
             </h3>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-center">
               <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
-                <span className="text-[11px] font-bold text-amber-800 block">Rewards Paid to Referrers</span>
-                <span className="text-xl font-black text-amber-950 mt-0.5 block">£{dashboard.returnsPaidPounds.toFixed(2)}</span>
-                <span className="text-[10px] text-neutral-500">Gross earned by referrers</span>
+                <span className="text-[11px] font-bold text-amber-800 block">Points Given for Referrals</span>
+                <span className="text-xl font-black text-amber-950 mt-0.5 block">{dashboard.pointsGivenReferrals}</span>
+                <span className="text-[10px] text-neutral-500">Points rewarded to referrers</span>
               </div>
 
               <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200">
-                <span className="text-[11px] font-bold text-indigo-800 block">Discounts Given to Friends</span>
-                <span className="text-xl font-black text-indigo-950 mt-0.5 block">£{(dashboard as any).discountsGivenPounds?.toFixed(2) || '0.00'}</span>
-                <span className="text-[10px] text-neutral-500">Off first purchase</span>
-              </div>
-
-              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
-                <span className="text-[11px] font-bold text-emerald-800 block">Redeemed</span>
-                <span className="text-xl font-black text-emerald-950 mt-0.5 block">£{dashboard.creditRedeemedPounds.toFixed(2)}</span>
-                <span className="text-[10px] text-neutral-500">Spent on repeat visits</span>
-              </div>
-
-              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200">
-                <span className="text-[11px] font-bold text-blue-800 block">Outstanding</span>
-                <span className="text-xl font-black text-blue-950 mt-0.5 block">£{dashboard.creditOutstandingPounds.toFixed(2)}</span>
-                <span className="text-[10px] text-neutral-500">Active waiting in wallets</span>
-              </div>
-
-              <div className="p-3 bg-neutral-100 rounded-xl border border-neutral-200">
-                <span className="text-[11px] font-bold text-neutral-600 block">Expired</span>
-                <span className="text-xl font-black text-neutral-800 mt-0.5 block">£{dashboard.creditExpiredPounds.toFixed(2)}</span>
-                <span className="text-[10px] text-neutral-500">Passed expiry cutoff</span>
+                <span className="text-[11px] font-bold text-indigo-800 block">Welcome Points Given</span>
+                <span className="text-xl font-black text-indigo-950 mt-0.5 block">{dashboard.welcomePointsGiven}</span>
+                <span className="text-[10px] text-neutral-500">Welcome points to new friends</span>
               </div>
             </div>
           </div>
@@ -696,7 +673,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
           <div className="flex items-center justify-between p-4 bg-rose-50/60 rounded-xl border border-rose-200">
             <div>
               <div className="text-sm font-bold text-rose-950">Referral Scheme Status</div>
-              <div className="text-xs text-neutral-600">If paused, new codes are rejected but existing credit remains spendable.</div>
+              <div className="text-xs text-neutral-600">If paused, new referral codes are rejected.</div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -711,29 +688,29 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
-              <label className="block text-xs font-black uppercase tracking-wider text-rose-950">
-                Friend Discount (£)
+              <label className="block text-xs font-black uppercase tracking-wider text-amber-950">
+                Points for Each New Friend
               </label>
-              <p className="text-[11px] text-neutral-500">Friend gets £__ off their first purchase</p>
+              <p className="text-[11px] text-neutral-500">Referrer points for each friend</p>
               <input
                 type="number"
                 min="1"
-                value={settings.friend_discount}
-                onChange={(e) => setSettings({ ...settings, friend_discount: parseFloat(e.target.value) || 0 })}
+                value={settings.referrer_points}
+                onChange={(e) => setSettings({ ...settings, referrer_points: parseInt(e.target.value) || 0 })}
                 className="w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none bg-white"
               />
             </div>
 
             <div className="p-4 rounded-xl border border-neutral-200 bg-neutral-50/50 space-y-2">
-              <label className="block text-xs font-black uppercase tracking-wider text-amber-950">
-                Referrer Reward (£)
+              <label className="block text-xs font-black uppercase tracking-wider text-rose-950">
+                Welcome Points for New Friend
               </label>
-              <p className="text-[11px] text-neutral-500">Referrer gets £__ back when their friend buys</p>
+              <p className="text-[11px] text-neutral-500">Points for the friend on first purchase</p>
               <input
                 type="number"
                 min="1"
-                value={settings.referrer_reward}
-                onChange={(e) => setSettings({ ...settings, referrer_reward: parseFloat(e.target.value) || 0 })}
+                value={settings.friend_points}
+                onChange={(e) => setSettings({ ...settings, friend_points: parseInt(e.target.value) || 0 })}
                 className="w-full p-2.5 rounded-xl border border-neutral-300 text-sm font-bold outline-none bg-white"
               />
             </div>
@@ -742,7 +719,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
               <label className="block text-xs font-black uppercase tracking-wider text-emerald-950">
                 Minimum Spend (£)
               </label>
-              <p className="text-[11px] text-neutral-500">Friend must spend at least £__ to use a code</p>
+              <p className="text-[11px] text-neutral-500">Friend must spend at least £__</p>
               <input
                 type="number"
                 min="1"
@@ -765,45 +742,30 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                Expiry Days (7–365)
-              </label>
-              <input
-                type="number"
-                min="7"
-                max="365"
-                value={settings.expiry_days}
-                onChange={(e) => setSettings({ ...settings, expiry_days: parseInt(e.target.value) || 90 })}
-                className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                Reminder Days (0–30)
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="30"
-                value={settings.reminder_days_before}
-                onChange={(e) => setSettings({ ...settings, reminder_days_before: parseInt(e.target.value) || 0 })}
-                className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
-                Max Credit Share % (1–100)
+                Points Expiry Days
               </label>
               <input
                 type="number"
                 min="1"
-                max="100"
-                value={settings.max_credit_share}
-                onChange={(e) => setSettings({ ...settings, max_credit_share: parseInt(e.target.value) || 50 })}
+                value={settings.points_expiry_days}
+                onChange={(e) => setSettings({ ...settings, points_expiry_days: parseInt(e.target.value) || 365 })}
+                className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-600 uppercase mb-1">
+                Max Friends per Customer (blank = unlimited)
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={settings.referral_limit ?? ''}
+                onChange={(e) => setSettings({ ...settings, referral_limit: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="Unlimited"
                 className="w-full p-2 rounded-lg border border-neutral-300 text-xs font-bold outline-none"
               />
             </div>
@@ -870,7 +832,8 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                 <tr>
                   <th className="py-3 px-4">Customer</th>
                   <th className="py-3 px-4">Mobile</th>
-                  <th className="py-3 px-4">Active Credit</th>
+                  <th className="py-3 px-4">Points</th>
+                  <th className="py-3 px-4">Friends referred</th>
                   <th className="py-3 px-4">Referral Code</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
@@ -883,7 +846,8 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                       <div className="text-[10px] text-neutral-400">Joined {new Date(c.joinedDate).toLocaleDateString('en-GB')}</div>
                     </td>
                     <td className="py-3 px-4 font-mono text-neutral-600">{c.phone}</td>
-                    <td className="py-3 px-4 font-bold text-emerald-800">£{c.activeCreditPounds.toFixed(2)}</td>
+                    <td className="py-3 px-4 font-bold text-emerald-800">{c.totalPoints}</td>
+                    <td className="py-3 px-4 font-bold text-neutral-800">{c.friendsReferred}</td>
                     <td className="py-3 px-4">
                       <span className="font-mono font-bold bg-neutral-100 px-2 py-0.5 rounded text-neutral-800">
                         {c.referralCode}
@@ -936,15 +900,15 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-900">Manual Credit Adjustment (£)</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-900">Add or remove points</h4>
                   <div className="flex gap-2">
                     <input
                       type="number"
-                      step="0.01"
+                      step="1"
                       value={adjAmount}
                       onChange={(e) => setAdjAmount(e.target.value)}
-                      placeholder="e.g. 10 or -5"
-                      className="w-28 p-2 rounded-lg border border-neutral-300 text-xs font-bold"
+                      placeholder="e.g. 100 or -50"
+                      className="w-32 p-2 rounded-lg border border-neutral-300 text-xs font-bold"
                     />
                     <input
                       type="text"
@@ -955,7 +919,7 @@ export const OwnerPortal: React.FC<OwnerPortalProps> = ({
                     />
                     <button
                       type="button"
-                      onClick={handleCreditAdjustment}
+                      onClick={handlePointsAdjustment}
                       disabled={adjLoading}
                       className="px-4 py-2 bg-rose-900 hover:bg-rose-800 text-white rounded-lg text-xs font-bold"
                     >

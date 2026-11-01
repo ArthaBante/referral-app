@@ -7,13 +7,11 @@ export interface SendMessageParams {
   data: {
     name?: string;
     link?: string;
-    friend_discount?: string;
-    referrer_reward?: string;
-    amount?: string;
+    friend_points?: string | number;
+    referrer_points?: string | number;
+    points_balance?: string | number;
+    amount?: string | number;
     expiry?: string;
-    used?: string;
-    balance?: string;
-    otp?: string;
     customBody?: string;
   };
 }
@@ -33,48 +31,32 @@ export const TEMPLATE_CONFIG: Record<MessageTemplateKind, TemplateConfigDef> = {
     title: 'Welcome — new customer, no code',
     description: 'Sent to a new customer after their first purchase when they did not use a referral code.',
     requiredPlaceholders: ['link'],
-    supportedPlaceholders: ['shop', 'name', 'link', 'friend_discount', 'referrer_reward'],
-    defaultEn: '{shop}: Thanks {name}! Your account and code: {link}. Give a friend {friend_discount} off, get {referrer_reward} back.',
+    supportedPlaceholders: ['shop', 'name', 'link', 'friend_points', 'referrer_points'],
+    defaultEn: '{shop}: Thanks {name}! Your account and code: {link}. Every friend who uses your code gets {friend_points} points, and you get {referrer_points}.',
   },
   welcome_with_code: {
     kind: 'welcome_with_code',
     title: "Welcome — new customer who used a friend's code",
     description: "Sent to a new customer after their first purchase when they used a friend's referral code.",
     requiredPlaceholders: ['link'],
-    supportedPlaceholders: ['shop', 'name', 'link', 'friend_discount', 'referrer_reward'],
-    defaultEn: '{shop}: Thanks {name}! You saved {friend_discount} today. Your own code: {link}. Give a friend {friend_discount} off, get {referrer_reward} back.',
+    supportedPlaceholders: ['shop', 'name', 'link', 'friend_points', 'referrer_points'],
+    defaultEn: "{shop}: Thanks {name}! You've got {friend_points} welcome points. Your own code: {link}",
   },
   referral_return: {
     kind: 'referral_return',
     title: 'Referral return',
     description: 'Sent to Emma when her friend uses her code.',
     requiredPlaceholders: ['amount'],
-    supportedPlaceholders: ['shop', 'name', 'link', 'amount', 'expiry'],
-    defaultEn: '{shop}: Your friend shopped with us! {amount} added to your account. Use it by {expiry}: {link}',
+    supportedPlaceholders: ['shop', 'name', 'link', 'amount', 'points_balance', 'expiry'],
+    defaultEn: '{shop}: Your friend shopped with us! +{amount} points. You now have {points_balance} points: {link}',
   },
   credit_expiring: {
     kind: 'credit_expiring',
-    title: 'Credit expiring reminder',
-    description: 'Sent to a customer when their store credit is about to expire.',
+    title: 'Points expiring reminder',
+    description: 'Sent to a customer when their points are about to expire.',
     requiredPlaceholders: ['amount', 'expiry'],
     supportedPlaceholders: ['shop', 'name', 'link', 'amount', 'expiry'],
-    defaultEn: '{shop}: {amount} of your store credit expires on {expiry}. Visit us before then!',
-  },
-  credit_used: {
-    kind: 'credit_used',
-    title: 'Credit used receipt',
-    description: 'Sent to a customer after they redeem store credit against a bill.',
-    requiredPlaceholders: ['used', 'balance'],
-    supportedPlaceholders: ['shop', 'name', 'link', 'used', 'balance'],
-    defaultEn: '{shop}: {used} credit used today. Balance: {balance}.',
-  },
-  otp: {
-    kind: 'otp',
-    title: 'OTP for using credit',
-    description: 'Sent to a customer to authorize store credit redemption at checkout.',
-    requiredPlaceholders: ['otp'],
-    supportedPlaceholders: ['shop', 'name', 'otp'],
-    defaultEn: '{shop}: Your code to use store credit is {otp}. Valid 5 minutes.',
+    defaultEn: '{shop}: {amount} of your points expire on {expiry}. Visit us before then!',
   },
   offer_footer: {
     kind: 'offer_footer',
@@ -138,7 +120,7 @@ export class MessagingService {
     if (database && database.message_templates) {
       const stored = database.message_templates.find((t) => t.kind === kind);
       if (stored && stored.body && stored.body.trim()) {
-        if (/\{(b_reward|a_amount|credit)\}/.test(stored.body)) {
+        if (/\{(friend_discount|referrer_reward|b_reward|a_amount|credit)\}/.test(stored.body)) {
           return config.defaultEn;
         }
         return stored.body;
@@ -171,10 +153,6 @@ export class MessagingService {
       templateKind = 'referral_return';
     } else if (kind === 'credit_expiring') {
       templateKind = 'credit_expiring';
-    } else if (kind === 'credit_used') {
-      templateKind = 'credit_used';
-    } else if (kind === 'otp') {
-      templateKind = 'otp';
     } else {
       templateKind = 'welcome_no_code';
     }
@@ -185,13 +163,11 @@ export class MessagingService {
       shop,
       name: data.name || 'valued customer',
       link: data.link || '',
-      friend_discount: data.friend_discount || `£${settings.friend_discount.toFixed(2)}`,
-      referrer_reward: data.referrer_reward || `£${settings.referrer_reward.toFixed(2)}`,
-      amount: data.amount || '',
+      friend_points: data.friend_points !== undefined ? String(data.friend_points) : String(settings.friend_points),
+      referrer_points: data.referrer_points !== undefined ? String(data.referrer_points) : String(settings.referrer_points),
+      points_balance: data.points_balance !== undefined ? String(data.points_balance) : '',
+      amount: data.amount !== undefined ? String(data.amount) : '',
       expiry: data.expiry || '',
-      used: data.used || '',
-      balance: data.balance || '',
-      otp: data.otp || '',
     };
 
     return renderTemplateText(tpl, values);
